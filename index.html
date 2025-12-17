@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>River Flow Visualizations</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0f;
+            color: #e8e8e8;
+            font-family: 'JetBrains Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            font-size: 36px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #6b8afd;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 48px;
+            font-weight: 300;
+        }
+
+        .description {
+            font-size: 14px;
+            line-height: 1.7;
+            color: #b0b0b0;
+            margin-bottom: 48px;
+            font-weight: 300;
+        }
+
+        .visualizations {
+            display: grid;
+            gap: 16px;
+        }
+
+        .viz-link {
+            display: block;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 24px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.2s ease;
+        }
+
+        .viz-link:hover {
+            background: rgba(107, 138, 253, 0.08);
+            border-color: rgba(107, 138, 253, 0.3);
+            transform: translateX(4px);
+        }
+
+        .viz-link h2 {
+            font-size: 16px;
+            font-weight: 500;
+            color: #6b8afd;
+            margin-bottom: 8px;
+        }
+
+        .viz-link p {
+            font-size: 13px;
+            color: #888;
+            font-weight: 300;
+            line-height: 1.5;
+        }
+
+        .badge {
+            display: inline-block;
+            background: rgba(107, 138, 253, 0.15);
+            color: #6b8afd;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 8px;
+        }
+
+        footer {
+            margin-top: 64px;
+            padding-top: 24px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+
+        footer a {
+            color: #6b8afd;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>River Flow Visualizations</h1>
+        <p class="subtitle">WebGL-based particle flow simulations across procedural terrain</p>
+
+        <div class="description">
+            A collection of experiments exploring particle-based river flows using Three.js.
+            Rivers are represented as directed acyclic graphs (DAGs) that drape over procedurally
+            generated terrain, with tens of thousands of particles creating organic flow patterns.
+        </div>
+
+        <div class="visualizations">
+            <a href="river-visualizer.html" class="viz-link">
+                <h2>River Flow Visualizer</h2>
+                <p>The main interactive visualization with DAG-based river networks, terrain conformance,
+                and particle width illusion. Includes edit mode for creating custom river networks.</p>
+                <span class="badge">Main Demo</span>
+            </a>
+
+            <a href="river-noise-paths.html" class="viz-link">
+                <h2>Noise Paths</h2>
+                <p>Exploration of noise-based path generation for creating natural-looking river curves
+                without manual edge placement.</p>
+            </a>
+
+            <a href="river-offset-paths.html" class="viz-link">
+                <h2>Offset Paths</h2>
+                <p>Experiments with lateral particle displacement and width modulation to create
+                the illusion of river width from individual particle trails.</p>
+            </a>
+
+            <a href="river-velocity-field.html" class="viz-link">
+                <h2>Velocity Field</h2>
+                <p>Velocity-based flow simulation using vector fields to guide particle movement
+                across the terrain surface.</p>
+            </a>
+
+            <a href="river-curvature-speed.html" class="viz-link">
+                <h2>Curvature Speed</h2>
+                <p>Particle speed variations based on path curvature, simulating faster flow
+                in straight sections and slower flow around bends.</p>
+            </a>
+        </div>
+
+        <footer>
+            <p>Built with Three.js and WebGL • <a href="https://github.com/erikcollinder/river-visualiser" target="_blank">View Source on GitHub</a></p>
+        </footer>
+    </div>
+</body>
+</html>
