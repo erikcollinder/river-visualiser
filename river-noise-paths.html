@@ -1,0 +1,2371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>River Flow - Noise Paths</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #0a0a0f;
+            color: #e8e8e8;
+            font-family: 'JetBrains Mono', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(10, 10, 15, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 20px;
+            width: 280px;
+            z-index: 100;
+        }
+        
+        #controls h2 {
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #6b8afd;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        .control-group {
+            margin-bottom: 16px;
+        }
+        
+        .control-group label {
+            display: block;
+            font-size: 10px;
+            font-weight: 400;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        
+        .control-group input[type="range"] {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            outline: none;
+        }
+        
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #6b8afd;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+        
+        .control-group input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        
+        .control-value {
+            font-size: 12px;
+            color: #6b8afd;
+            float: right;
+            margin-top: -22px;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 10px 16px;
+            background: rgba(107, 138, 253, 0.15);
+            border: 1px solid rgba(107, 138, 253, 0.3);
+            border-radius: 6px;
+            color: #6b8afd;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 8px;
+        }
+        
+        .btn:hover {
+            background: rgba(107, 138, 253, 0.25);
+            border-color: rgba(107, 138, 253, 0.5);
+        }
+        
+        .btn.danger {
+            background: rgba(253, 107, 107, 0.15);
+            border-color: rgba(253, 107, 107, 0.3);
+            color: #fd6b6b;
+        }
+        
+        .btn.danger:hover {
+            background: rgba(253, 107, 107, 0.25);
+            border-color: rgba(253, 107, 107, 0.5);
+        }
+        
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(10, 10, 15, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 16px 20px;
+            font-size: 11px;
+            line-height: 1.8;
+            color: #888;
+            z-index: 100;
+        }
+        
+        #instructions kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            font-size: 10px;
+            color: #aaa;
+        }
+        
+        #mode-indicator {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(10, 10, 15, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            z-index: 100;
+        }
+        
+        #mode-indicator.edit-mode {
+            color: #fdcb6b;
+            border-color: rgba(253, 203, 107, 0.3);
+        }
+        
+        #mode-indicator.view-mode {
+            color: #6bfdb5;
+            border-color: rgba(107, 253, 181, 0.3);
+        }
+        
+        .separator {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.08);
+            margin: 16px 0;
+        }
+        
+        .checkbox-group {
+            margin-bottom: 12px;
+        }
+        
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .checkbox-label input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            margin-right: 10px;
+            position: relative;
+            transition: all 0.15s ease;
+        }
+        
+        .checkbox-label input[type="checkbox"]:checked {
+            background: rgba(107, 138, 253, 0.3);
+            border-color: #6b8afd;
+        }
+        
+        .checkbox-label input[type="checkbox"]:checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 11px;
+            color: #6b8afd;
+        }
+        
+        .checkbox-text {
+            font-size: 11px;
+            letter-spacing: 0.5px;
+            color: #aaa;
+        }
+        
+        .control-group select {
+            width: 100%;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            color: #e8e8e8;
+            font-family: inherit;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.15s ease;
+            -webkit-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b8afd' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+        }
+        
+        .control-group select:hover {
+            border-color: rgba(107, 138, 253, 0.5);
+        }
+        
+        .control-group select:focus {
+            border-color: #6b8afd;
+        }
+        
+        .control-group select option {
+            background: #1a1a24;
+            color: #e8e8e8;
+        }
+        
+        .type-controls {
+            display: none;
+        }
+        
+        .type-controls.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="mode-indicator" class="view-mode">View Mode</div>
+    
+    <div id="controls">
+        <h2>Noise Paths Demo</h2>
+        
+        <div class="control-group">
+            <label>Terrain Give</label>
+            <input type="range" id="give" min="0" max="1" step="0.01" value="0.87">
+            <span class="control-value" id="give-value">0.87</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Lateral Gravity</label>
+            <input type="range" id="lateral-gravity" min="0" max="1" step="0.05" value="0.05">
+            <span class="control-value" id="lateral-gravity-value">0.05</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Path Smoothing</label>
+            <input type="range" id="path-smoothing" min="0" max="1" step="0.05" value="0.75">
+            <span class="control-value" id="path-smoothing-value">0.75</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Particle Type</label>
+            <select id="particle-type">
+                <option value="trail">Trail</option>
+                <option value="point">Point</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label>Particle Count</label>
+            <input type="range" id="particle-count" min="1000" max="100000" step="1000" value="77000">
+            <span class="control-value" id="particle-count-value">77000</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Flow Speed</label>
+            <input type="range" id="flow-speed" min="0.1" max="3" step="0.1" value="0.2">
+            <span class="control-value" id="flow-speed-value">0.2</span>
+        </div>
+        
+        <!-- Trail-specific controls -->
+        <div id="trail-controls" class="type-controls active">
+            <div class="control-group">
+                <label>Trail Length</label>
+                <input type="range" id="trail-length" min="2" max="20" step="1" value="2">
+                <span class="control-value" id="trail-length-value">2</span>
+            </div>
+        </div>
+        
+        <!-- Point-specific controls -->
+        <div id="point-controls" class="type-controls">
+            <div class="control-group">
+                <label>Point Size</label>
+                <input type="range" id="point-size" min="0.5" max="5" step="0.1" value="1.5">
+                <span class="control-value" id="point-size-value">1.5</span>
+            </div>
+        </div>
+        
+        <div class="separator"></div>
+        
+        <div class="control-group">
+            <label>River Width</label>
+            <input type="range" id="river-width" min="0.02" max="0.5" step="0.01" value="0.33">
+            <span class="control-value" id="river-width-value">0.33</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Width at Nodes</label>
+            <input type="range" id="node-width" min="0" max="1" step="0.05" value="0.2">
+            <span class="control-value" id="node-width-value">0.20</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Width at Mid-Edge</label>
+            <input type="range" id="mid-width" min="0.5" max="2" step="0.05" value="1.0">
+            <span class="control-value" id="mid-width-value">1.00</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Wobble Amount</label>
+            <input type="range" id="wobble-amount" min="0" max="1" step="0.05" value="0.1">
+            <span class="control-value" id="wobble-amount-value">0.10</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Wobble Speed</label>
+            <input type="range" id="wobble-speed" min="0" max="3" step="0.1" value="0.6">
+            <span class="control-value" id="wobble-speed-value">0.6</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Path Noise Amount</label>
+            <input type="range" id="path-noise-amount" min="0" max="2" step="0.1" value="0.5">
+            <span class="control-value" id="path-noise-amount-value">0.5</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Path Noise Frequency</label>
+            <input type="range" id="path-noise-freq" min="0.5" max="5" step="0.1" value="2.0">
+            <span class="control-value" id="path-noise-freq-value">2.0</span>
+        </div>
+        
+        <div class="control-group checkbox-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="disable-depth" checked>
+                <span class="checkbox-text">Render above terrain</span>
+            </label>
+        </div>
+        
+        <div class="control-group checkbox-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="show-nodes" checked>
+                <span class="checkbox-text">Show node handles</span>
+            </label>
+        </div>
+        
+        <div class="separator"></div>
+        
+        <div class="control-group">
+            <label>Terrain Scale</label>
+            <input type="range" id="terrain-scale" min="0.5" max="3" step="0.1" value="0.8">
+            <span class="control-value" id="terrain-scale-value">0.8</span>
+        </div>
+        
+        <div class="control-group">
+            <label>Terrain Height</label>
+            <input type="range" id="terrain-height" min="0.1" max="2" step="0.1" value="0.4">
+            <span class="control-value" id="terrain-height-value">0.4</span>
+        </div>
+        
+        <div class="separator"></div>
+        
+        <button class="btn" id="toggle-mode">Toggle Edit Mode</button>
+        <button class="btn" id="regenerate-terrain">Regenerate Terrain</button>
+        <button class="btn danger" id="clear-nodes">Clear All Nodes</button>
+    </div>
+    
+    <div id="instructions">
+        <kbd>E</kbd> Toggle edit mode<br>
+        <kbd>Click</kbd> Add node (edit mode)<br>
+        <kbd>Drag</kbd> Move node (edit mode)<br>
+        <kbd>Shift+Click</kbd> Connect nodes<br>
+        <kbd>Delete</kbd> Remove selected node<br>
+        <kbd>Scroll</kbd> Zoom
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        // ============================================================
+        // CONFIGURATION
+        // ============================================================
+        const CONFIG = {
+            terrain: {
+                size: 10,
+                segments: 128,
+                heightScale: 0.4,
+                noiseScale: 0.8
+            },
+            river: {
+                give: 0.87,
+                pathSamples: 64,
+                lateralGravity: 0.05,       // How much path curves toward valleys (0-1)
+                relaxationIterations: 20,   // Iterations for path settling
+                pathSmoothing: 0.75,         // How much to smooth the path (0-1)
+                smoothingPasses: 5,         // Number of smoothing passes
+                baseWidth: 0.33,
+                nodeWidth: 0.2,
+                midWidth: 1.0,
+                confluenceFactor: 0.4,
+                wobbleAmount: 0.1,
+                wobbleSpeed: 0.6,
+                wobbleFrequency: 2.5,
+                pathNoiseAmount: 0.5,      // How much to perturb the path
+                pathNoiseFrequency: 2.0    // Frequency of noise along path
+            },
+            particles: {
+                type: 'trail',  // 'trail' or 'point'
+                count: 77000,
+                speed: 0.2,
+                trailLength: 2,
+                pointSize: 1.5
+            }
+        };
+        
+        // ============================================================
+        // SIMPLEX NOISE (Embedded for terrain generation)
+        // ============================================================
+        class SimplexNoise {
+            constructor(seed = Math.random()) {
+                this.p = new Uint8Array(256);
+                this.perm = new Uint8Array(512);
+                this.permMod12 = new Uint8Array(512);
+                
+                for (let i = 0; i < 256; i++) {
+                    this.p[i] = i;
+                }
+                
+                // Fisher-Yates shuffle with seed
+                let s = seed * 2147483647;
+                for (let i = 255; i > 0; i--) {
+                    s = (s * 16807) % 2147483647;
+                    const j = s % (i + 1);
+                    [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
+                }
+                
+                for (let i = 0; i < 512; i++) {
+                    this.perm[i] = this.p[i & 255];
+                    this.permMod12[i] = this.perm[i] % 12;
+                }
+                
+                this.grad3 = [
+                    [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+                    [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+                    [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+                ];
+                
+                this.F2 = 0.5 * (Math.sqrt(3) - 1);
+                this.G2 = (3 - Math.sqrt(3)) / 6;
+            }
+            
+            noise2D(x, y) {
+                const { perm, permMod12, grad3, F2, G2 } = this;
+                
+                const s = (x + y) * F2;
+                const i = Math.floor(x + s);
+                const j = Math.floor(y + s);
+                const t = (i + j) * G2;
+                const X0 = i - t;
+                const Y0 = j - t;
+                const x0 = x - X0;
+                const y0 = y - Y0;
+                
+                const i1 = x0 > y0 ? 1 : 0;
+                const j1 = x0 > y0 ? 0 : 1;
+                
+                const x1 = x0 - i1 + G2;
+                const y1 = y0 - j1 + G2;
+                const x2 = x0 - 1 + 2 * G2;
+                const y2 = y0 - 1 + 2 * G2;
+                
+                const ii = i & 255;
+                const jj = j & 255;
+                
+                let n0 = 0, n1 = 0, n2 = 0;
+                
+                let t0 = 0.5 - x0*x0 - y0*y0;
+                if (t0 >= 0) {
+                    const gi0 = permMod12[ii + perm[jj]];
+                    t0 *= t0;
+                    n0 = t0 * t0 * (grad3[gi0][0] * x0 + grad3[gi0][1] * y0);
+                }
+                
+                let t1 = 0.5 - x1*x1 - y1*y1;
+                if (t1 >= 0) {
+                    const gi1 = permMod12[ii + i1 + perm[jj + j1]];
+                    t1 *= t1;
+                    n1 = t1 * t1 * (grad3[gi1][0] * x1 + grad3[gi1][1] * y1);
+                }
+                
+                let t2 = 0.5 - x2*x2 - y2*y2;
+                if (t2 >= 0) {
+                    const gi2 = permMod12[ii + 1 + perm[jj + 1]];
+                    t2 *= t2;
+                    n2 = t2 * t2 * (grad3[gi2][0] * x2 + grad3[gi2][1] * y2);
+                }
+                
+                return 70 * (n0 + n1 + n2);
+            }
+            
+            fbm(x, y, octaves = 6, lacunarity = 2, persistence = 0.5) {
+                let value = 0;
+                let amplitude = 1;
+                let frequency = 1;
+                let maxValue = 0;
+                
+                for (let i = 0; i < octaves; i++) {
+                    value += amplitude * this.noise2D(x * frequency, y * frequency);
+                    maxValue += amplitude;
+                    amplitude *= persistence;
+                    frequency *= lacunarity;
+                }
+                
+                return value / maxValue;
+            }
+        }
+        
+        // ============================================================
+        // HEIGHTMAP
+        // ============================================================
+        class Heightmap {
+            constructor(size, segments) {
+                this.size = size;
+                this.segments = segments;
+                this.data = new Float32Array((segments + 1) * (segments + 1));
+                this.noise = new SimplexNoise();
+            }
+            
+            generate(scale = 1.5, heightScale = 0.8) {
+                const { size, segments, data, noise } = this;
+                
+                for (let j = 0; j <= segments; j++) {
+                    for (let i = 0; i <= segments; i++) {
+                        const x = (i / segments - 0.5) * size;
+                        const z = (j / segments - 0.5) * size;
+                        
+                        // Multi-octave noise for natural terrain
+                        let h = noise.fbm(x * scale * 0.3, z * scale * 0.3, 6, 2, 0.5);
+                        
+                        // Add some ridge noise for mountain peaks
+                        const ridge = 1 - Math.abs(noise.fbm(x * scale * 0.2 + 100, z * scale * 0.2 + 100, 4, 2, 0.6));
+                        h = h * 0.7 + ridge * ridge * 0.3;
+                        
+                        // Edge falloff
+                        const dx = (i / segments - 0.5) * 2;
+                        const dz = (j / segments - 0.5) * 2;
+                        const edgeDist = Math.max(Math.abs(dx), Math.abs(dz));
+                        const edgeFalloff = 1 - Math.pow(Math.max(0, edgeDist - 0.6) / 0.4, 2);
+                        
+                        data[j * (segments + 1) + i] = h * heightScale * edgeFalloff;
+                    }
+                }
+            }
+            
+            sampleHeight(x, z) {
+                const { size, segments, data } = this;
+                
+                // Convert world coords to grid coords
+                const gx = ((x / size) + 0.5) * segments;
+                const gz = ((z / size) + 0.5) * segments;
+                
+                // Clamp to valid range
+                const i0 = Math.max(0, Math.min(segments - 1, Math.floor(gx)));
+                const j0 = Math.max(0, Math.min(segments - 1, Math.floor(gz)));
+                const i1 = Math.min(segments, i0 + 1);
+                const j1 = Math.min(segments, j0 + 1);
+                
+                // Bilinear interpolation
+                const fx = gx - i0;
+                const fz = gz - j0;
+                
+                const h00 = data[j0 * (segments + 1) + i0];
+                const h10 = data[j0 * (segments + 1) + i1];
+                const h01 = data[j1 * (segments + 1) + i0];
+                const h11 = data[j1 * (segments + 1) + i1];
+                
+                const h0 = h00 * (1 - fx) + h10 * fx;
+                const h1 = h01 * (1 - fx) + h11 * fx;
+                
+                return h0 * (1 - fz) + h1 * fz;
+            }
+            
+            // Compute terrain gradient (direction of steepest ascent) at a point
+            // Returns { x, z } normalized vector pointing uphill, and magnitude
+            getGradient(x, z) {
+                const epsilon = 0.05; // Sample distance for finite difference
+                
+                const hCenter = this.sampleHeight(x, z);
+                const hPosX = this.sampleHeight(x + epsilon, z);
+                const hNegX = this.sampleHeight(x - epsilon, z);
+                const hPosZ = this.sampleHeight(x, z + epsilon);
+                const hNegZ = this.sampleHeight(x, z - epsilon);
+                
+                // Central difference for gradient
+                const dhdx = (hPosX - hNegX) / (2 * epsilon);
+                const dhdz = (hPosZ - hNegZ) / (2 * epsilon);
+                
+                const magnitude = Math.sqrt(dhdx * dhdx + dhdz * dhdz);
+                
+                if (magnitude < 0.0001) {
+                    return { x: 0, z: 0, magnitude: 0 };
+                }
+                
+                return {
+                    x: dhdx / magnitude,
+                    z: dhdz / magnitude,
+                    magnitude: magnitude
+                };
+            }
+        }
+        
+        // ============================================================
+        // RIVER GRAPH (DAG)
+        // ============================================================
+        class RiverNode {
+            constructor(id, x, z, heightmap) {
+                this.id = id;
+                this.x = x;
+                this.z = z;
+                this.y = heightmap.sampleHeight(x, z);
+                this.heightmap = heightmap;
+                this.outgoing = []; // Edge references
+                this.incoming = []; // Edge references
+            }
+            
+            updateHeight() {
+                this.y = this.heightmap.sampleHeight(this.x, this.z);
+            }
+            
+            setPosition(x, z) {
+                this.x = x;
+                this.z = z;
+                this.updateHeight();
+            }
+        }
+        
+        class RiverEdge {
+            constructor(source, target, heightmap, give = 0.8) {
+                this.source = source;
+                this.target = target;
+                this.heightmap = heightmap;
+                this.give = give;
+                this.pathPoints = [];
+                this.pathLaterals = [];  // Lateral vectors at each path point
+                this.pathWidths = [];    // Width at each path point
+                this.pathLength = 0;
+                this.isValid = true;     // Whether this edge should be rendered/used
+                this.generatePath();
+            }
+            
+            generatePath(samples = CONFIG.river.pathSamples) {
+                const { source, target, heightmap, give } = this;
+                this.pathPoints = [];
+                this.pathLaterals = [];
+                this.pathWidths = [];
+                this.pathLength = 0;
+                this.isValid = true;
+                
+                // Check minimum 2D distance between nodes
+                const dx = target.x - source.x;
+                const dz = target.z - source.z;
+                const horizontalDist = Math.sqrt(dx * dx + dz * dz);
+                
+                const MIN_EDGE_LENGTH = 0.3; // Minimum horizontal distance
+                
+                if (horizontalDist < MIN_EDGE_LENGTH) {
+                    this.isValid = false;
+                    // Still create minimal path for data structure integrity
+                    this.pathPoints.push(new THREE.Vector3(source.x, source.y, source.z));
+                    this.pathPoints.push(new THREE.Vector3(target.x, target.y, target.z));
+                    this.pathLaterals.push(new THREE.Vector3(1, 0, 0));
+                    this.pathLaterals.push(new THREE.Vector3(1, 0, 0));
+                    this.pathWidths.push(CONFIG.river.baseWidth);
+                    this.pathWidths.push(CONFIG.river.baseWidth);
+                    this.pathLength = 0.001; // Avoid division by zero
+                    return;
+                }
+                
+                // Initialize path points along straight line (2D positions)
+                const pathPoints2D = [];
+                for (let i = 0; i <= samples; i++) {
+                    const t = i / samples;
+                    pathPoints2D.push({
+                        x: source.x + (target.x - source.x) * t,
+                        z: source.z + (target.z - source.z) * t
+                    });
+                }
+                
+                // Iterative relaxation for lateral gravity
+                const lateralGravity = CONFIG.river.lateralGravity;
+                const iterations = CONFIG.river.relaxationIterations;
+                
+                if (lateralGravity > 0) {
+                    const tensionStrength = 0.3; // How much neighbors pull toward straight line
+                    const gravityStrength = lateralGravity * 0.15; // How much terrain pulls downhill
+                    
+                    for (let iter = 0; iter < iterations; iter++) {
+                        // Don't move first and last points (anchored to nodes)
+                        for (let i = 1; i < samples; i++) {
+                            const prev = pathPoints2D[i - 1];
+                            const curr = pathPoints2D[i];
+                            const next = pathPoints2D[i + 1];
+                            
+                            // Tension force: pull toward midpoint of neighbors (smoothing)
+                            const midX = (prev.x + next.x) / 2;
+                            const midZ = (prev.z + next.z) / 2;
+                            const tensionX = (midX - curr.x) * tensionStrength;
+                            const tensionZ = (midZ - curr.z) * tensionStrength;
+                            
+                            // Gravity force: pull toward downhill direction
+                            const gradient = heightmap.getGradient(curr.x, curr.z);
+                            // Gradient points uphill, we want to go downhill (negative gradient)
+                            // Scale by gradient magnitude - steeper slopes have stronger pull
+                            const gravityX = -gradient.x * gradient.magnitude * gravityStrength;
+                            const gravityZ = -gradient.z * gradient.magnitude * gravityStrength;
+                            
+                            // Apply forces
+                            curr.x += tensionX + gravityX;
+                            curr.z += tensionZ + gravityZ;
+                        }
+                    }
+                }
+                
+                // Laplacian smoothing passes to remove sharp kinks
+                const smoothing = CONFIG.river.pathSmoothing;
+                const smoothingPasses = CONFIG.river.smoothingPasses;
+                
+                if (smoothing > 0) {
+                    for (let pass = 0; pass < smoothingPasses; pass++) {
+                        // Create temp array to store new positions
+                        const smoothed = pathPoints2D.map(p => ({ x: p.x, z: p.z }));
+                        
+                        // Don't move first and last points (anchored to nodes)
+                        for (let i = 1; i < samples; i++) {
+                            const prev = pathPoints2D[i - 1];
+                            const curr = pathPoints2D[i];
+                            const next = pathPoints2D[i + 1];
+                            
+                            // Laplacian: blend toward midpoint of neighbors
+                            const midX = (prev.x + next.x) / 2;
+                            const midZ = (prev.z + next.z) / 2;
+                            
+                            smoothed[i].x = curr.x * (1 - smoothing) + midX * smoothing;
+                            smoothed[i].z = curr.z * (1 - smoothing) + midZ * smoothing;
+                        }
+                        
+                        // Copy smoothed positions back
+                        for (let i = 1; i < samples; i++) {
+                            pathPoints2D[i].x = smoothed[i].x;
+                            pathPoints2D[i].z = smoothed[i].z;
+                        }
+                    }
+                }
+                
+                // Calculate width at source and target based on connections
+                const sourceConnections = source.outgoing.length + source.incoming.length;
+                const targetConnections = target.outgoing.length + target.incoming.length;
+                
+                const baseWidth = CONFIG.river.baseWidth;
+                const cf = CONFIG.river.confluenceFactor;
+                
+                const sourceWidth = baseWidth * (1 + Math.max(0, sourceConnections - 1) * cf);
+                const targetWidth = baseWidth * (1 + Math.max(0, targetConnections - 1) * cf);
+                
+                const UP = new THREE.Vector3(0, 1, 0);
+                let prevPoint = null;
+                let maxTerrainPenetration = 0;
+                
+                // Convert 2D relaxed path to 3D with height
+                for (let i = 0; i <= samples; i++) {
+                    const t = i / samples;
+                    const p2d = pathPoints2D[i];
+                    
+                    // Heights
+                    const straightHeight = source.y + (target.y - source.y) * t;
+                    const terrainHeight = heightmap.sampleHeight(p2d.x, p2d.z);
+                    
+                    // Blend based on give parameter
+                    const blendedHeight = straightHeight * (1 - give) + terrainHeight * give;
+                    
+                    // Track how much the straight line would penetrate terrain
+                    const penetration = terrainHeight - straightHeight;
+                    maxTerrainPenetration = Math.max(maxTerrainPenetration, penetration);
+                    
+                    // Ensure we don't go through terrain
+                    const y = Math.max(terrainHeight + 0.02, blendedHeight);
+                    
+                    const point = new THREE.Vector3(p2d.x, y, p2d.z);
+                    this.pathPoints.push(point);
+                    
+                    // Interpolate width
+                    this.pathWidths.push(sourceWidth + (targetWidth - sourceWidth) * t);
+                    
+                    if (prevPoint) {
+                        this.pathLength += point.distanceTo(prevPoint);
+                    }
+                    prevPoint = point;
+                }
+                
+                // Mark as invalid if the edge has to climb too steeply over terrain
+                const heightRange = Math.abs(source.y - target.y);
+                const steepnessRatio = maxTerrainPenetration / Math.max(horizontalDist, 0.1);
+                
+                if (steepnessRatio > 0.8 && maxTerrainPenetration > 0.2) {
+                    this.isValid = false;
+                }
+                
+                // Also check if path length is unreasonably short compared to horizontal distance
+                if (this.pathLength < horizontalDist * 0.5) {
+                    this.isValid = false;
+                }
+                
+                // Compute lateral vectors (perpendicular to path, horizontal only)
+                for (let i = 0; i < this.pathPoints.length; i++) {
+                    let tangent;
+                    
+                    if (i === 0) {
+                        tangent = new THREE.Vector3().subVectors(this.pathPoints[1], this.pathPoints[0]);
+                    } else if (i === this.pathPoints.length - 1) {
+                        tangent = new THREE.Vector3().subVectors(this.pathPoints[i], this.pathPoints[i - 1]);
+                    } else {
+                        // Average of forward and backward tangents for smoother result
+                        tangent = new THREE.Vector3().subVectors(this.pathPoints[i + 1], this.pathPoints[i - 1]);
+                    }
+                    
+                    // Project tangent to horizontal plane and normalize
+                    tangent.y = 0;
+                    
+                    // Handle edge case where tangent is purely vertical
+                    if (tangent.lengthSq() < 0.0001) {
+                        tangent.set(1, 0, 0);
+                    } else {
+                        tangent.normalize();
+                    }
+                    
+                    // Cross with UP to get lateral (horizontal) vector
+                    const lateral = new THREE.Vector3().crossVectors(tangent, UP).normalize();
+                    this.pathLaterals.push(lateral);
+                }
+            }
+            
+            // Get position along path (t from 0 to 1)
+            getPointAt(t) {
+                const idx = t * (this.pathPoints.length - 1);
+                const i0 = Math.floor(idx);
+                const i1 = Math.min(i0 + 1, this.pathPoints.length - 1);
+                const f = idx - i0;
+                
+                const p0 = this.pathPoints[i0];
+                const p1 = this.pathPoints[i1];
+                
+                return new THREE.Vector3(
+                    p0.x + (p1.x - p0.x) * f,
+                    p0.y + (p1.y - p0.y) * f,
+                    p0.z + (p1.z - p0.z) * f
+                );
+            }
+            
+            // Get lateral vector at position (t from 0 to 1)
+            getLateralAt(t) {
+                const idx = t * (this.pathLaterals.length - 1);
+                const i0 = Math.floor(idx);
+                const i1 = Math.min(i0 + 1, this.pathLaterals.length - 1);
+                const f = idx - i0;
+                
+                const l0 = this.pathLaterals[i0];
+                const l1 = this.pathLaterals[i1];
+                
+                return new THREE.Vector3(
+                    l0.x + (l1.x - l0.x) * f,
+                    l0.y + (l1.y - l0.y) * f,
+                    l0.z + (l1.z - l0.z) * f
+                ).normalize();
+            }
+            
+            // Get width at position (t from 0 to 1)
+            getWidthAt(t) {
+                const idx = t * (this.pathWidths.length - 1);
+                const i0 = Math.floor(idx);
+                const i1 = Math.min(i0 + 1, this.pathWidths.length - 1);
+                const f = idx - i0;
+                
+                return this.pathWidths[i0] + (this.pathWidths[i1] - this.pathWidths[i0]) * f;
+            }
+            
+            // Get displaced position with lateral offset
+            // Applies width modulation: narrow at nodes, wide at mid-edge
+            getDisplacedPointAt(t, lateralOffset) {
+                const point = this.getPointAt(t);
+                const lateral = this.getLateralAt(t);
+                const baseWidth = this.getWidthAt(t);
+                
+                // Compute width modulation: smoothstep from nodeWidth at ends to midWidth at center
+                // Using sine curve for smooth pinching: sin(t * PI) gives 0 at t=0, 1 at t=0.5, 0 at t=1
+                const pinchCurve = Math.sin(t * Math.PI);
+                const nodeWidth = CONFIG.river.nodeWidth;
+                const midWidth = CONFIG.river.midWidth;
+                
+                // Interpolate between node width and mid width based on curve
+                const widthMultiplier = nodeWidth + (midWidth - nodeWidth) * pinchCurve;
+                
+                const finalWidth = baseWidth * widthMultiplier;
+                
+                // Apply lateral displacement (horizontal only - lateral.y should be ~0)
+                point.x += lateral.x * lateralOffset * finalWidth;
+                point.z += lateral.z * lateralOffset * finalWidth;
+                
+                return point;
+            }
+        }
+        
+        class RiverGraph {
+            constructor(heightmap) {
+                this.heightmap = heightmap;
+                this.nodes = new Map();
+                this.edges = [];
+                this.nextNodeId = 0;
+            }
+            
+            addNode(x, z) {
+                const id = this.nextNodeId++;
+                const node = new RiverNode(id, x, z, this.heightmap);
+                this.nodes.set(id, node);
+                return node;
+            }
+            
+            removeNode(node) {
+                // Remove all edges connected to this node
+                this.edges = this.edges.filter(edge => {
+                    if (edge.source === node || edge.target === node) {
+                        // Clean up references
+                        edge.source.outgoing = edge.source.outgoing.filter(e => e !== edge);
+                        edge.target.incoming = edge.target.incoming.filter(e => e !== edge);
+                        return false;
+                    }
+                    return true;
+                });
+                this.nodes.delete(node.id);
+            }
+            
+            addEdge(sourceNode, targetNode) {
+                // Check for existing edge
+                const exists = this.edges.some(e => 
+                    e.source === sourceNode && e.target === targetNode
+                );
+                if (exists) return null;
+                
+                // Check for cycle (simple DFS)
+                if (this.wouldCreateCycle(sourceNode, targetNode)) {
+                    console.warn('Edge would create cycle, skipping');
+                    return null;
+                }
+                
+                const edge = new RiverEdge(sourceNode, targetNode, this.heightmap, CONFIG.river.give);
+                this.edges.push(edge);
+                sourceNode.outgoing.push(edge);
+                targetNode.incoming.push(edge);
+                return edge;
+            }
+            
+            wouldCreateCycle(source, target) {
+                // If we add source->target, check if target can reach source
+                const visited = new Set();
+                const stack = [target];
+                
+                while (stack.length > 0) {
+                    const node = stack.pop();
+                    if (node === source) return true;
+                    if (visited.has(node.id)) continue;
+                    visited.add(node.id);
+                    
+                    for (const edge of node.outgoing) {
+                        stack.push(edge.target);
+                    }
+                }
+                return false;
+            }
+            
+            updateEdgePaths() {
+                for (const edge of this.edges) {
+                    edge.give = CONFIG.river.give;
+                    edge.generatePath();
+                }
+            }
+            
+            clear() {
+                this.nodes.clear();
+                this.edges = [];
+                this.nextNodeId = 0;
+            }
+            
+            // Get only valid edges (for rendering and particles)
+            getValidEdges() {
+                return this.edges.filter(e => e.isValid);
+            }
+            
+            // Get all edges that start from nodes with no incoming edges (source nodes)
+            // Only considers valid edges
+            getSourceEdges() {
+                const validEdges = this.getValidEdges();
+                return validEdges.filter(e => {
+                    // Check if source has no valid incoming edges
+                    const hasValidIncoming = e.source.incoming.some(inc => inc.isValid);
+                    return !hasValidIncoming;
+                });
+            }
+        }
+        
+        // ============================================================
+        // PARTICLE SYSTEM
+        // ============================================================
+        class ParticleSystem {
+            constructor(graph, count = 50000, trailLength = 8) {
+                this.graph = graph;
+                this.count = count;
+                this.trailLength = trailLength;
+                this.speed = 1.0;
+                this.time = 0;
+                
+                // Particle state
+                this.edgeIndices = new Int32Array(count);
+                this.progress = new Float32Array(count);
+                this.speeds = new Float32Array(count);
+                this.baseOffsets = new Float32Array(count);  // Static lateral offset [-1, 1]
+                this.wobblePhases = new Float32Array(count); // Phase offset for wobble
+                this.noiseSeeds = new Float32Array(count);   // Per-particle noise seed for path perturbation
+                
+                // Trail positions (count * trailLength * 3)
+                this.trailPositions = new Float32Array(count * trailLength * 3);
+                
+                // Initialize
+                this.initializeParticles();
+                this.createGeometry();
+            }
+            
+            initializeParticles() {
+                const edges = this.graph.getValidEdges();
+                if (edges.length === 0) return;
+                
+                for (let i = 0; i < this.count; i++) {
+                    // Assign to random valid edge
+                    this.edgeIndices[i] = Math.floor(Math.random() * edges.length);
+                    this.progress[i] = Math.random();
+                    this.speeds[i] = 0.8 + Math.random() * 0.4; // Variation in speed
+                    
+                    // Static lateral offset - gaussian-ish distribution for more particles near center
+                    const u1 = Math.random();
+                    const u2 = Math.random();
+                    this.baseOffsets[i] = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * 0.4;
+                    this.baseOffsets[i] = Math.max(-1, Math.min(1, this.baseOffsets[i])); // Clamp
+                    
+                    // Random phase for wobble so particles don't wobble in sync
+                    this.wobblePhases[i] = Math.random() * Math.PI * 2;
+                    
+                    // Random noise seed for path perturbation
+                    this.noiseSeeds[i] = Math.random() * 1000;
+                    
+                    // Initialize trail to current position
+                    const edge = edges[this.edgeIndices[i]];
+                    const lateralOffset = this.computeNoisyOffset(i, this.progress[i]);
+                    const pos = edge.getDisplacedPointAt(this.progress[i], lateralOffset);
+                    
+                    for (let t = 0; t < this.trailLength; t++) {
+                        const idx = (i * this.trailLength + t) * 3;
+                        this.trailPositions[idx] = pos.x;
+                        this.trailPositions[idx + 1] = pos.y;
+                        this.trailPositions[idx + 2] = pos.z;
+                    }
+                }
+            }
+            
+            computeLateralOffset(particleIndex) {
+                const baseOffset = this.baseOffsets[particleIndex];
+                
+                // If wobble is zero, skip the sine calculation entirely
+                const wobbleAmount = CONFIG.river.wobbleAmount;
+                if (wobbleAmount === 0) {
+                    return baseOffset;
+                }
+                
+                const wobbleSpeed = CONFIG.river.wobbleSpeed;
+                const wobbleFreq = CONFIG.river.wobbleFrequency;
+                const phase = this.wobblePhases[particleIndex];
+                
+                // Gentle sinusoidal wobble
+                const wobble = Math.sin(this.time * wobbleSpeed + phase + particleIndex * wobbleFreq * 0.01) * wobbleAmount * 0.5;
+                
+                return baseOffset + wobble;
+            }
+            
+            // Compute offset with per-particle path noise
+            computeNoisyOffset(particleIndex, progress) {
+                const baseOffset = this.baseOffsets[particleIndex];
+                const seed = this.noiseSeeds[particleIndex];
+                
+                // Path noise - varies smoothly along the path
+                const noiseAmount = CONFIG.river.pathNoiseAmount;
+                const noiseFreq = CONFIG.river.pathNoiseFrequency;
+                
+                // Use multiple sine waves with different frequencies for organic noise
+                const noise1 = Math.sin(progress * Math.PI * noiseFreq + seed) * 0.5;
+                const noise2 = Math.sin(progress * Math.PI * noiseFreq * 2.3 + seed * 1.7) * 0.3;
+                const noise3 = Math.sin(progress * Math.PI * noiseFreq * 0.7 + seed * 0.5) * 0.2;
+                const pathNoise = (noise1 + noise2 + noise3) * noiseAmount;
+                
+                // Time-based wobble
+                const wobbleAmount = CONFIG.river.wobbleAmount;
+                const wobbleSpeed = CONFIG.river.wobbleSpeed;
+                const phase = this.wobblePhases[particleIndex];
+                const wobble = wobbleAmount > 0 ? 
+                    Math.sin(this.time * wobbleSpeed + phase) * wobbleAmount * 0.3 : 0;
+                
+                // Combine base offset, path noise, and wobble
+                return Math.max(-1.2, Math.min(1.2, baseOffset + pathNoise + wobble));
+            }
+            
+            createGeometry() {
+                // Create line segments for trails
+                this.geometry = new THREE.BufferGeometry();
+                
+                // Each trail is (trailLength - 1) line segments = (trailLength - 1) * 2 vertices
+                const vertexCount = this.count * (this.trailLength - 1) * 2;
+                this.positions = new Float32Array(vertexCount * 3);
+                this.colors = new Float32Array(vertexCount * 4);
+                
+                this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+                this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 4));
+                
+                // Material
+                this.material = new THREE.LineBasicMaterial({
+                    vertexColors: true,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    depthTest: false
+                });
+                
+                this.mesh = new THREE.LineSegments(this.geometry, this.material);
+            }
+            
+            update(deltaTime) {
+                const edges = this.graph.getValidEdges();
+                if (edges.length === 0) return;
+                
+                this.time += deltaTime;
+                const dt = deltaTime * this.speed * 0.5;
+                
+                for (let i = 0; i < this.count; i++) {
+                    let edgeIdx = this.edgeIndices[i];
+                    let needsTrailReset = false;
+                    
+                    // Handle case where edge index is out of bounds
+                    if (edgeIdx >= edges.length) {
+                        edgeIdx = Math.floor(Math.random() * edges.length);
+                        this.edgeIndices[i] = edgeIdx;
+                        this.progress[i] = 0;
+                        needsTrailReset = true;
+                    }
+                    
+                    const edge = edges[edgeIdx];
+                    
+                    // Update progress
+                    this.progress[i] += dt * this.speeds[i] / edge.pathLength;
+                    
+                    // Check if reached end of edge
+                    if (this.progress[i] >= 1) {
+                        const targetNode = edge.target;
+                        
+                        // Find valid outgoing edges
+                        const validOutgoing = targetNode.outgoing.filter(e => e.isValid);
+                        
+                        if (validOutgoing.length > 0) {
+                            // Pick random valid outgoing edge
+                            const nextEdge = validOutgoing[Math.floor(Math.random() * validOutgoing.length)];
+                            this.edgeIndices[i] = edges.indexOf(nextEdge);
+                            this.progress[i] = 0;
+                            // Don't reset trail for continuous flow - the next edge starts where this one ends
+                        } else {
+                            // Dead end - respawn at a source edge
+                            const sourceEdges = this.graph.getSourceEdges();
+                            if (sourceEdges.length > 0) {
+                                const newEdge = sourceEdges[Math.floor(Math.random() * sourceEdges.length)];
+                                this.edgeIndices[i] = edges.indexOf(newEdge);
+                            } else {
+                                this.edgeIndices[i] = Math.floor(Math.random() * edges.length);
+                            }
+                            this.progress[i] = 0;
+                            needsTrailReset = true; // RESPAWN = reset trail to avoid teleport line
+                            
+                            // Reassign base offset and noise seed on respawn for variety
+                            const u1 = Math.random();
+                            const u2 = Math.random();
+                            this.baseOffsets[i] = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * 0.4;
+                            this.baseOffsets[i] = Math.max(-1, Math.min(1, this.baseOffsets[i]));
+                            this.noiseSeeds[i] = Math.random() * 1000;
+                        }
+                    }
+                    
+                    // Get current position with noisy lateral displacement
+                    const currentEdge = edges[this.edgeIndices[i]];
+                    if (!currentEdge) continue; // Safety check
+                    
+                    const lateralOffset = this.computeNoisyOffset(i, this.progress[i]);
+                    const pos = currentEdge.getDisplacedPointAt(Math.min(1, this.progress[i]), lateralOffset);
+                    
+                    if (needsTrailReset) {
+                        // Reset entire trail to current position to avoid teleport lines
+                        for (let t = 0; t < this.trailLength; t++) {
+                            const idx = (i * this.trailLength + t) * 3;
+                            this.trailPositions[idx] = pos.x;
+                            this.trailPositions[idx + 1] = pos.y;
+                            this.trailPositions[idx + 2] = pos.z;
+                        }
+                    } else {
+                        // Normal trail shift
+                        for (let t = this.trailLength - 1; t > 0; t--) {
+                            const dstIdx = (i * this.trailLength + t) * 3;
+                            const srcIdx = (i * this.trailLength + t - 1) * 3;
+                            this.trailPositions[dstIdx] = this.trailPositions[srcIdx];
+                            this.trailPositions[dstIdx + 1] = this.trailPositions[srcIdx + 1];
+                            this.trailPositions[dstIdx + 2] = this.trailPositions[srcIdx + 2];
+                        }
+                        
+                        // Set head position
+                        const headIdx = i * this.trailLength * 3;
+                        this.trailPositions[headIdx] = pos.x;
+                        this.trailPositions[headIdx + 1] = pos.y;
+                        this.trailPositions[headIdx + 2] = pos.z;
+                    }
+                }
+                
+                // Update geometry
+                this.updateGeometry();
+            }
+            
+            updateGeometry() {
+                let vertexIdx = 0;
+                
+                for (let i = 0; i < this.count; i++) {
+                    for (let t = 0; t < this.trailLength - 1; t++) {
+                        const idx0 = (i * this.trailLength + t) * 3;
+                        const idx1 = (i * this.trailLength + t + 1) * 3;
+                        
+                        // Start vertex
+                        this.positions[vertexIdx * 3] = this.trailPositions[idx0];
+                        this.positions[vertexIdx * 3 + 1] = this.trailPositions[idx0 + 1];
+                        this.positions[vertexIdx * 3 + 2] = this.trailPositions[idx0 + 2];
+                        
+                        // Color with fade
+                        const alpha0 = (1 - t / this.trailLength) * 0.6;
+                        this.colors[vertexIdx * 4] = 0.4;
+                        this.colors[vertexIdx * 4 + 1] = 0.6;
+                        this.colors[vertexIdx * 4 + 2] = 1.0;
+                        this.colors[vertexIdx * 4 + 3] = alpha0;
+                        vertexIdx++;
+                        
+                        // End vertex
+                        this.positions[vertexIdx * 3] = this.trailPositions[idx1];
+                        this.positions[vertexIdx * 3 + 1] = this.trailPositions[idx1 + 1];
+                        this.positions[vertexIdx * 3 + 2] = this.trailPositions[idx1 + 2];
+                        
+                        const alpha1 = (1 - (t + 1) / this.trailLength) * 0.6;
+                        this.colors[vertexIdx * 4] = 0.4;
+                        this.colors[vertexIdx * 4 + 1] = 0.6;
+                        this.colors[vertexIdx * 4 + 2] = 1.0;
+                        this.colors[vertexIdx * 4 + 3] = alpha1;
+                        vertexIdx++;
+                    }
+                }
+                
+                this.geometry.attributes.position.needsUpdate = true;
+                this.geometry.attributes.color.needsUpdate = true;
+            }
+            
+            reinitialize() {
+                this.initializeParticles();
+            }
+            
+            setCount(newCount) {
+                if (newCount === this.count) return;
+                
+                this.count = newCount;
+                this.edgeIndices = new Int32Array(newCount);
+                this.progress = new Float32Array(newCount);
+                this.speeds = new Float32Array(newCount);
+                this.baseOffsets = new Float32Array(newCount);
+                this.wobblePhases = new Float32Array(newCount);
+                this.noiseSeeds = new Float32Array(newCount);
+                this.trailPositions = new Float32Array(newCount * this.trailLength * 3);
+                
+                const vertexCount = newCount * (this.trailLength - 1) * 2;
+                this.positions = new Float32Array(vertexCount * 3);
+                this.colors = new Float32Array(vertexCount * 4);
+                
+                this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+                this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 4));
+                
+                this.initializeParticles();
+            }
+            
+            setTrailLength(newLength) {
+                if (newLength === this.trailLength) return;
+                
+                this.trailLength = newLength;
+                this.trailPositions = new Float32Array(this.count * newLength * 3);
+                
+                const vertexCount = this.count * (newLength - 1) * 2;
+                this.positions = new Float32Array(vertexCount * 3);
+                this.colors = new Float32Array(vertexCount * 4);
+                
+                this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+                this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 4));
+                
+                this.initializeParticles();
+            }
+        }
+        
+        // ============================================================
+        // POINT PARTICLE SYSTEM
+        // ============================================================
+        class PointParticleSystem {
+            constructor(graph, count = 50000) {
+                this.graph = graph;
+                this.count = count;
+                this.speed = 1.0;
+                this.time = 0;
+                this.pointSize = CONFIG.particles.pointSize;
+                
+                // Particle state
+                this.edgeIndices = new Int32Array(count);
+                this.progress = new Float32Array(count);
+                this.speeds = new Float32Array(count);
+                this.baseOffsets = new Float32Array(count);
+                this.wobblePhases = new Float32Array(count);
+                this.noiseSeeds = new Float32Array(count);
+                
+                // Initialize
+                this.initializeParticles();
+                this.createGeometry();
+            }
+            
+            initializeParticles() {
+                const edges = this.graph.getValidEdges();
+                if (edges.length === 0) return;
+                
+                for (let i = 0; i < this.count; i++) {
+                    this.edgeIndices[i] = Math.floor(Math.random() * edges.length);
+                    this.progress[i] = Math.random();
+                    this.speeds[i] = 0.8 + Math.random() * 0.4;
+                    
+                    // Gaussian-ish distribution for lateral offset
+                    const u1 = Math.random();
+                    const u2 = Math.random();
+                    this.baseOffsets[i] = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * 0.4;
+                    this.baseOffsets[i] = Math.max(-1, Math.min(1, this.baseOffsets[i]));
+                    
+                    this.wobblePhases[i] = Math.random() * Math.PI * 2;
+                    this.noiseSeeds[i] = Math.random() * 1000;
+                }
+            }
+            
+            computeNoisyOffset(particleIndex, progress) {
+                const baseOffset = this.baseOffsets[particleIndex];
+                const seed = this.noiseSeeds[particleIndex];
+                
+                const noiseAmount = CONFIG.river.pathNoiseAmount;
+                const noiseFreq = CONFIG.river.pathNoiseFrequency;
+                
+                const noise1 = Math.sin(progress * Math.PI * noiseFreq + seed) * 0.5;
+                const noise2 = Math.sin(progress * Math.PI * noiseFreq * 2.3 + seed * 1.7) * 0.3;
+                const noise3 = Math.sin(progress * Math.PI * noiseFreq * 0.7 + seed * 0.5) * 0.2;
+                const pathNoise = (noise1 + noise2 + noise3) * noiseAmount;
+                
+                const wobbleAmount = CONFIG.river.wobbleAmount;
+                const wobbleSpeed = CONFIG.river.wobbleSpeed;
+                const phase = this.wobblePhases[particleIndex];
+                const wobble = wobbleAmount > 0 ? 
+                    Math.sin(this.time * wobbleSpeed + phase) * wobbleAmount * 0.3 : 0;
+                
+                return Math.max(-1.2, Math.min(1.2, baseOffset + pathNoise + wobble));
+            }
+            
+            createGeometry() {
+                this.geometry = new THREE.BufferGeometry();
+                
+                this.positions = new Float32Array(this.count * 3);
+                this.colors = new Float32Array(this.count * 4);
+                
+                // Initialize colors
+                for (let i = 0; i < this.count; i++) {
+                    this.colors[i * 4] = 0.4;
+                    this.colors[i * 4 + 1] = 0.6;
+                    this.colors[i * 4 + 2] = 1.0;
+                    this.colors[i * 4 + 3] = 0.6;
+                }
+                
+                this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+                this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 4));
+                
+                // Custom shader material for square points (constant screen-space size)
+                this.material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        pointSize: { value: this.pointSize }
+                    },
+                    vertexShader: `
+                        attribute vec4 color;
+                        varying vec4 vColor;
+                        uniform float pointSize;
+                        
+                        void main() {
+                            vColor = color;
+                            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                            gl_PointSize = pointSize;
+                            gl_Position = projectionMatrix * mvPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        varying vec4 vColor;
+                        
+                        void main() {
+                            gl_FragColor = vColor;
+                        }
+                    `,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    depthTest: false
+                });
+                
+                this.mesh = new THREE.Points(this.geometry, this.material);
+            }
+            
+            update(deltaTime) {
+                const edges = this.graph.getValidEdges();
+                if (edges.length === 0) return;
+                
+                this.time += deltaTime;
+                const dt = deltaTime * this.speed * 0.5;
+                
+                for (let i = 0; i < this.count; i++) {
+                    let edgeIdx = this.edgeIndices[i];
+                    
+                    if (edgeIdx >= edges.length) {
+                        edgeIdx = Math.floor(Math.random() * edges.length);
+                        this.edgeIndices[i] = edgeIdx;
+                        this.progress[i] = 0;
+                    }
+                    
+                    const edge = edges[edgeIdx];
+                    
+                    this.progress[i] += dt * this.speeds[i] / edge.pathLength;
+                    
+                    if (this.progress[i] >= 1) {
+                        const targetNode = edge.target;
+                        const validOutgoing = targetNode.outgoing.filter(e => e.isValid);
+                        
+                        if (validOutgoing.length > 0) {
+                            const nextEdge = validOutgoing[Math.floor(Math.random() * validOutgoing.length)];
+                            this.edgeIndices[i] = edges.indexOf(nextEdge);
+                            this.progress[i] = 0;
+                        } else {
+                            const sourceEdges = this.graph.getSourceEdges();
+                            if (sourceEdges.length > 0) {
+                                const newEdge = sourceEdges[Math.floor(Math.random() * sourceEdges.length)];
+                                this.edgeIndices[i] = edges.indexOf(newEdge);
+                            } else {
+                                this.edgeIndices[i] = Math.floor(Math.random() * edges.length);
+                            }
+                            this.progress[i] = 0;
+                            
+                            const u1 = Math.random();
+                            const u2 = Math.random();
+                            this.baseOffsets[i] = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * 0.4;
+                            this.baseOffsets[i] = Math.max(-1, Math.min(1, this.baseOffsets[i]));
+                            this.noiseSeeds[i] = Math.random() * 1000;
+                        }
+                    }
+                    
+                    const currentEdge = edges[this.edgeIndices[i]];
+                    if (!currentEdge) continue;
+                    
+                    const lateralOffset = this.computeNoisyOffset(i, this.progress[i]);
+                    const pos = currentEdge.getDisplacedPointAt(Math.min(1, this.progress[i]), lateralOffset);
+                    
+                    this.positions[i * 3] = pos.x;
+                    this.positions[i * 3 + 1] = pos.y;
+                    this.positions[i * 3 + 2] = pos.z;
+                }
+                
+                this.geometry.attributes.position.needsUpdate = true;
+            }
+            
+            reinitialize() {
+                this.initializeParticles();
+            }
+            
+            setCount(newCount) {
+                if (newCount === this.count) return;
+                
+                this.count = newCount;
+                this.edgeIndices = new Int32Array(newCount);
+                this.progress = new Float32Array(newCount);
+                this.speeds = new Float32Array(newCount);
+                this.baseOffsets = new Float32Array(newCount);
+                this.wobblePhases = new Float32Array(newCount);
+                this.noiseSeeds = new Float32Array(newCount);
+                
+                this.positions = new Float32Array(newCount * 3);
+                this.colors = new Float32Array(newCount * 4);
+                
+                for (let i = 0; i < newCount; i++) {
+                    this.colors[i * 4] = 0.4;
+                    this.colors[i * 4 + 1] = 0.6;
+                    this.colors[i * 4 + 2] = 1.0;
+                    this.colors[i * 4 + 3] = 0.6;
+                }
+                
+                this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+                this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 4));
+                
+                this.initializeParticles();
+            }
+            
+            setPointSize(size) {
+                this.pointSize = size;
+                this.material.uniforms.pointSize.value = size;
+            }
+        }
+        
+        // ============================================================
+        // TERRAIN MESH
+        // ============================================================
+        class TerrainMesh {
+            constructor(heightmap) {
+                this.heightmap = heightmap;
+                this.createMesh();
+            }
+            
+            createMesh() {
+                const { size, segments, data } = this.heightmap;
+                
+                const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+                geometry.rotateX(-Math.PI / 2);
+                
+                // Apply heightmap
+                const positions = geometry.attributes.position.array;
+                for (let i = 0; i < positions.length / 3; i++) {
+                    positions[i * 3 + 1] = data[i];
+                }
+                geometry.computeVertexNormals();
+                
+                // Custom shader material
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uMinHeight: { value: -0.5 },
+                        uMaxHeight: { value: 1.0 },
+                        uLightDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() }
+                    },
+                    vertexShader: `
+                        varying vec3 vNormal;
+                        varying float vHeight;
+                        varying vec3 vPosition;
+                        
+                        void main() {
+                            vNormal = normalize(normalMatrix * normal);
+                            vHeight = position.y;
+                            vPosition = position;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform float uMinHeight;
+                        uniform float uMaxHeight;
+                        uniform vec3 uLightDir;
+                        
+                        varying vec3 vNormal;
+                        varying float vHeight;
+                        varying vec3 vPosition;
+                        
+                        void main() {
+                            float h = (vHeight - uMinHeight) / (uMaxHeight - uMinHeight);
+                            h = clamp(h, 0.0, 1.0);
+                            
+                            // Color gradient based on height
+                            vec3 lowColor = vec3(0.08, 0.12, 0.18);
+                            vec3 midColor = vec3(0.15, 0.22, 0.28);
+                            vec3 highColor = vec3(0.25, 0.32, 0.38);
+                            
+                            vec3 color = mix(lowColor, midColor, smoothstep(0.0, 0.5, h));
+                            color = mix(color, highColor, smoothstep(0.5, 1.0, h));
+                            
+                            // Simple lighting
+                            float diffuse = max(dot(vNormal, uLightDir), 0.0);
+                            float ambient = 0.3;
+                            float light = ambient + diffuse * 0.7;
+                            
+                            // Grid lines
+                            float gridSize = 0.5;
+                            vec2 grid = abs(fract(vPosition.xz / gridSize - 0.5) - 0.5) / fwidth(vPosition.xz / gridSize);
+                            float line = min(grid.x, grid.y);
+                            float gridAlpha = 1.0 - min(line, 1.0);
+                            
+                            color = mix(color * light, vec3(0.3, 0.4, 0.5), gridAlpha * 0.15);
+                            
+                            gl_FragColor = vec4(color, 1.0);
+                        }
+                    `,
+                    side: THREE.DoubleSide
+                });
+                
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.geometry = geometry;
+            }
+            
+            updateFromHeightmap() {
+                const { data } = this.heightmap;
+                const positions = this.geometry.attributes.position.array;
+                
+                for (let i = 0; i < positions.length / 3; i++) {
+                    positions[i * 3 + 1] = data[i];
+                }
+                
+                this.geometry.attributes.position.needsUpdate = true;
+                this.geometry.computeVertexNormals();
+            }
+        }
+        
+        // ============================================================
+        // NODE MARKERS (for editing)
+        // ============================================================
+        class NodeMarkers {
+            constructor(graph, scene) {
+                this.graph = graph;
+                this.scene = scene;
+                this.markers = new Map();
+                this.selectedNode = null;
+                this.visible = true;
+                
+                // Marker geometry/material
+                this.geometry = new THREE.SphereGeometry(0.08, 16, 16);
+                this.materialNormal = new THREE.MeshBasicMaterial({ color: 0xfdcb6b });
+                this.materialSelected = new THREE.MeshBasicMaterial({ color: 0xff6b6b });
+                this.materialHover = new THREE.MeshBasicMaterial({ color: 0x6bfdb5 });
+            }
+            
+            update() {
+                // Remove markers for deleted nodes
+                for (const [id, marker] of this.markers) {
+                    if (!this.graph.nodes.has(id)) {
+                        this.scene.remove(marker);
+                        this.markers.delete(id);
+                    }
+                }
+                
+                // Add/update markers for nodes
+                for (const [id, node] of this.graph.nodes) {
+                    let marker = this.markers.get(id);
+                    
+                    if (!marker) {
+                        marker = new THREE.Mesh(this.geometry, this.materialNormal.clone());
+                        marker.userData.nodeId = id;
+                        marker.visible = this.visible;
+                        this.scene.add(marker);
+                        this.markers.set(id, marker);
+                    }
+                    
+                    marker.position.set(node.x, node.y + 0.1, node.z);
+                    
+                    // Update material based on selection
+                    if (this.selectedNode === node) {
+                        marker.material = this.materialSelected;
+                    } else {
+                        marker.material = this.materialNormal;
+                    }
+                }
+            }
+            
+            setVisible(visible) {
+                this.visible = visible;
+                for (const marker of this.markers.values()) {
+                    marker.visible = visible;
+                }
+            }
+            
+            getMarkerArray() {
+                return Array.from(this.markers.values());
+            }
+            
+            setSelected(node) {
+                this.selectedNode = node;
+                this.update();
+            }
+            
+            clear() {
+                for (const marker of this.markers.values()) {
+                    this.scene.remove(marker);
+                }
+                this.markers.clear();
+                this.selectedNode = null;
+            }
+        }
+        
+        // ============================================================
+        // EDGE LINES (debug visualization)
+        // ============================================================
+        class EdgeLines {
+            constructor(graph, scene) {
+                this.graph = graph;
+                this.scene = scene;
+                this.lines = [];
+                this.visible = true;
+            }
+            
+            update() {
+                // Clear existing
+                for (const line of this.lines) {
+                    this.scene.remove(line);
+                }
+                this.lines = [];
+                
+                for (const edge of this.graph.edges) {
+                    const points = edge.pathPoints;
+                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    
+                    // Different styling for valid vs invalid edges
+                    const material = new THREE.LineBasicMaterial({
+                        color: edge.isValid ? 0x6b8afd : 0xff4444,
+                        transparent: true,
+                        opacity: edge.isValid ? 0.4 : 0.2,
+                        linewidth: 1
+                    });
+                    
+                    const line = new THREE.Line(geometry, material);
+                    line.visible = this.visible;
+                    this.scene.add(line);
+                    this.lines.push(line);
+                }
+            }
+            
+            setVisible(visible) {
+                this.visible = visible;
+                for (const line of this.lines) {
+                    line.visible = visible;
+                }
+            }
+            
+            clear() {
+                for (const line of this.lines) {
+                    this.scene.remove(line);
+                }
+                this.lines = [];
+            }
+        }
+        
+        // ============================================================
+        // MAIN APPLICATION
+        // ============================================================
+        class RiverVisualizer {
+            constructor() {
+                this.editMode = false;
+                this.connectMode = false;
+                this.connectSourceNode = null;
+                this.draggingNode = null;
+                
+                this.init();
+                this.setupControls();
+                this.createDefaultRiver();
+                this.animate();
+            }
+            
+            init() {
+                // Renderer
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.renderer.setClearColor(0x0a0a0f);
+                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+                
+                // Scene
+                this.scene = new THREE.Scene();
+                
+                // Camera (isometric-ish)
+                const aspect = window.innerWidth / window.innerHeight;
+                this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 100);
+                this.camera.position.set(8, 8, 8);
+                this.camera.lookAt(0, 0, 0);
+                
+                // Controls
+                this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
+                this.orbitControls.enableDamping = true;
+                this.orbitControls.dampingFactor = 0.05;
+                this.orbitControls.maxPolarAngle = Math.PI / 2 - 0.1;
+                
+                // Heightmap & Terrain
+                this.heightmap = new Heightmap(CONFIG.terrain.size, CONFIG.terrain.segments);
+                this.heightmap.generate(CONFIG.terrain.noiseScale, CONFIG.terrain.heightScale);
+                
+                this.terrain = new TerrainMesh(this.heightmap);
+                this.scene.add(this.terrain.mesh);
+                
+                // River graph
+                this.graph = new RiverGraph(this.heightmap);
+                
+                // Node markers
+                this.nodeMarkers = new NodeMarkers(this.graph, this.scene);
+                
+                // Edge lines
+                this.edgeLines = new EdgeLines(this.graph, this.scene);
+                
+                // Particle system (created after we have edges)
+                this.particles = null;
+                
+                // Raycaster for interaction
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+                
+                // Resize handler
+                window.addEventListener('resize', () => this.onResize());
+                
+                // Input handlers
+                this.renderer.domElement.addEventListener('click', (e) => this.onClick(e));
+                this.renderer.domElement.addEventListener('mousedown', (e) => this.onMouseDown(e));
+                this.renderer.domElement.addEventListener('mousemove', (e) => this.onMouseMove(e));
+                this.renderer.domElement.addEventListener('mouseup', (e) => this.onMouseUp(e));
+                window.addEventListener('keydown', (e) => this.onKeyDown(e));
+                
+                // Clock for animation
+                this.clock = new THREE.Clock();
+            }
+            
+            setupControls() {
+                // Give slider
+                const giveSlider = document.getElementById('give');
+                const giveValue = document.getElementById('give-value');
+                giveSlider.addEventListener('input', () => {
+                    CONFIG.river.give = parseFloat(giveSlider.value);
+                    giveValue.textContent = CONFIG.river.give.toFixed(2);
+                    this.graph.updateEdgePaths();
+                    this.edgeLines.update();
+                    this.reinitializeActiveParticles();
+                });
+                
+                // Lateral gravity slider
+                const lateralGravitySlider = document.getElementById('lateral-gravity');
+                const lateralGravityValue = document.getElementById('lateral-gravity-value');
+                lateralGravitySlider.addEventListener('input', () => {
+                    CONFIG.river.lateralGravity = parseFloat(lateralGravitySlider.value);
+                    lateralGravityValue.textContent = CONFIG.river.lateralGravity.toFixed(2);
+                    this.graph.updateEdgePaths();
+                    this.edgeLines.update();
+                    this.reinitializeActiveParticles();
+                });
+                
+                // Path smoothing slider
+                const pathSmoothingSlider = document.getElementById('path-smoothing');
+                const pathSmoothingValue = document.getElementById('path-smoothing-value');
+                pathSmoothingSlider.addEventListener('input', () => {
+                    CONFIG.river.pathSmoothing = parseFloat(pathSmoothingSlider.value);
+                    pathSmoothingValue.textContent = CONFIG.river.pathSmoothing.toFixed(2);
+                    this.graph.updateEdgePaths();
+                    this.edgeLines.update();
+                    this.reinitializeActiveParticles();
+                });
+                
+                // Particle count slider
+                const particleSlider = document.getElementById('particle-count');
+                const particleValue = document.getElementById('particle-count-value');
+                particleSlider.addEventListener('input', () => {
+                    const count = parseInt(particleSlider.value);
+                    particleValue.textContent = count;
+                    CONFIG.particles.count = count;
+                    if (this.trailParticles) {
+                        this.trailParticles.setCount(count);
+                    }
+                    if (this.pointParticles) {
+                        this.pointParticles.setCount(count);
+                    }
+                });
+                
+                // Flow speed slider
+                const speedSlider = document.getElementById('flow-speed');
+                const speedValue = document.getElementById('flow-speed-value');
+                speedSlider.addEventListener('input', () => {
+                    const speed = parseFloat(speedSlider.value);
+                    speedValue.textContent = speed.toFixed(1);
+                    CONFIG.particles.speed = speed;
+                    if (this.trailParticles) {
+                        this.trailParticles.speed = speed;
+                    }
+                    if (this.pointParticles) {
+                        this.pointParticles.speed = speed;
+                    }
+                });
+                
+                // Trail length slider
+                const trailSlider = document.getElementById('trail-length');
+                const trailValue = document.getElementById('trail-length-value');
+                trailSlider.addEventListener('input', () => {
+                    const length = parseInt(trailSlider.value);
+                    trailValue.textContent = length;
+                    if (this.trailParticles) {
+                        this.trailParticles.setTrailLength(length);
+                    }
+                });
+                
+                // Point size slider
+                const pointSizeSlider = document.getElementById('point-size');
+                const pointSizeValue = document.getElementById('point-size-value');
+                pointSizeSlider.addEventListener('input', () => {
+                    const size = parseFloat(pointSizeSlider.value);
+                    pointSizeValue.textContent = size.toFixed(1);
+                    CONFIG.particles.pointSize = size;
+                    if (this.pointParticles) {
+                        this.pointParticles.setPointSize(size);
+                    }
+                });
+                
+                // Particle type dropdown
+                const particleTypeSelect = document.getElementById('particle-type');
+                const trailControls = document.getElementById('trail-controls');
+                const pointControls = document.getElementById('point-controls');
+                
+                particleTypeSelect.addEventListener('change', () => {
+                    const type = particleTypeSelect.value;
+                    CONFIG.particles.type = type;
+                    
+                    // Toggle control visibility
+                    if (type === 'trail') {
+                        trailControls.classList.add('active');
+                        pointControls.classList.remove('active');
+                    } else {
+                        trailControls.classList.remove('active');
+                        pointControls.classList.add('active');
+                    }
+                    
+                    this.switchParticleType(type);
+                });
+                
+                // River width slider
+                const widthSlider = document.getElementById('river-width');
+                const widthValue = document.getElementById('river-width-value');
+                widthSlider.addEventListener('input', () => {
+                    CONFIG.river.baseWidth = parseFloat(widthSlider.value);
+                    widthValue.textContent = CONFIG.river.baseWidth.toFixed(2);
+                    this.graph.updateEdgePaths();
+                    this.edgeLines.update();
+                });
+                
+                // Node width slider
+                const nodeWidthSlider = document.getElementById('node-width');
+                const nodeWidthValue = document.getElementById('node-width-value');
+                nodeWidthSlider.addEventListener('input', () => {
+                    CONFIG.river.nodeWidth = parseFloat(nodeWidthSlider.value);
+                    nodeWidthValue.textContent = CONFIG.river.nodeWidth.toFixed(2);
+                });
+                
+                // Mid-edge width slider
+                const midWidthSlider = document.getElementById('mid-width');
+                const midWidthValue = document.getElementById('mid-width-value');
+                midWidthSlider.addEventListener('input', () => {
+                    CONFIG.river.midWidth = parseFloat(midWidthSlider.value);
+                    midWidthValue.textContent = CONFIG.river.midWidth.toFixed(2);
+                });
+                
+                // Wobble amount slider
+                const wobbleAmountSlider = document.getElementById('wobble-amount');
+                const wobbleAmountValue = document.getElementById('wobble-amount-value');
+                wobbleAmountSlider.addEventListener('input', () => {
+                    CONFIG.river.wobbleAmount = parseFloat(wobbleAmountSlider.value);
+                    wobbleAmountValue.textContent = CONFIG.river.wobbleAmount.toFixed(2);
+                });
+                
+                // Wobble speed slider
+                const wobbleSpeedSlider = document.getElementById('wobble-speed');
+                const wobbleSpeedValue = document.getElementById('wobble-speed-value');
+                wobbleSpeedSlider.addEventListener('input', () => {
+                    CONFIG.river.wobbleSpeed = parseFloat(wobbleSpeedSlider.value);
+                    wobbleSpeedValue.textContent = CONFIG.river.wobbleSpeed.toFixed(1);
+                });
+                
+                // Path noise amount slider
+                const pathNoiseAmountSlider = document.getElementById('path-noise-amount');
+                const pathNoiseAmountValue = document.getElementById('path-noise-amount-value');
+                pathNoiseAmountSlider.addEventListener('input', () => {
+                    CONFIG.river.pathNoiseAmount = parseFloat(pathNoiseAmountSlider.value);
+                    pathNoiseAmountValue.textContent = CONFIG.river.pathNoiseAmount.toFixed(1);
+                });
+                
+                // Path noise frequency slider
+                const pathNoiseFreqSlider = document.getElementById('path-noise-freq');
+                const pathNoiseFreqValue = document.getElementById('path-noise-freq-value');
+                pathNoiseFreqSlider.addEventListener('input', () => {
+                    CONFIG.river.pathNoiseFrequency = parseFloat(pathNoiseFreqSlider.value);
+                    pathNoiseFreqValue.textContent = CONFIG.river.pathNoiseFrequency.toFixed(1);
+                });
+                
+                // Depth testing checkbox
+                const depthCheckbox = document.getElementById('disable-depth');
+                depthCheckbox.addEventListener('change', () => {
+                    const depthTest = !depthCheckbox.checked;
+                    if (this.trailParticles) {
+                        this.trailParticles.material.depthTest = depthTest;
+                        this.trailParticles.material.needsUpdate = true;
+                    }
+                    if (this.pointParticles) {
+                        this.pointParticles.material.depthTest = depthTest;
+                        this.pointParticles.material.needsUpdate = true;
+                    }
+                });
+                
+                // Show node handles checkbox
+                const showNodesCheckbox = document.getElementById('show-nodes');
+                showNodesCheckbox.addEventListener('change', () => {
+                    this.setNodeMarkersVisible(showNodesCheckbox.checked);
+                });
+                
+                // Terrain scale slider
+                const scaleSlider = document.getElementById('terrain-scale');
+                const scaleValue = document.getElementById('terrain-scale-value');
+                scaleSlider.addEventListener('input', () => {
+                    CONFIG.terrain.noiseScale = parseFloat(scaleSlider.value);
+                    scaleValue.textContent = CONFIG.terrain.noiseScale.toFixed(1);
+                });
+                
+                // Terrain height slider
+                const heightSlider = document.getElementById('terrain-height');
+                const heightValue = document.getElementById('terrain-height-value');
+                heightSlider.addEventListener('input', () => {
+                    CONFIG.terrain.heightScale = parseFloat(heightSlider.value);
+                    heightValue.textContent = CONFIG.terrain.heightScale.toFixed(1);
+                });
+                
+                // Toggle mode button
+                document.getElementById('toggle-mode').addEventListener('click', () => {
+                    this.toggleEditMode();
+                });
+                
+                // Regenerate terrain button
+                document.getElementById('regenerate-terrain').addEventListener('click', () => {
+                    this.regenerateTerrain();
+                });
+                
+                // Clear nodes button
+                document.getElementById('clear-nodes').addEventListener('click', () => {
+                    this.clearNodes();
+                });
+            }
+            
+            createDefaultRiver() {
+                // Create a simple river to start
+                const n1 = this.graph.addNode(-3, -3);
+                const n2 = this.graph.addNode(-1, -1);
+                const n3 = this.graph.addNode(1, 0);
+                const n4 = this.graph.addNode(2, 2);
+                const n5 = this.graph.addNode(3, 3);
+                
+                // Branch
+                const n6 = this.graph.addNode(2, -1);
+                const n7 = this.graph.addNode(4, -2);
+                
+                this.graph.addEdge(n1, n2);
+                this.graph.addEdge(n2, n3);
+                this.graph.addEdge(n3, n4);
+                this.graph.addEdge(n4, n5);
+                
+                // Branch edges
+                this.graph.addEdge(n3, n6);
+                this.graph.addEdge(n6, n7);
+                
+                this.nodeMarkers.update();
+                this.edgeLines.update();
+                
+                // Create both particle systems
+                this.trailParticles = new ParticleSystem(this.graph, CONFIG.particles.count, CONFIG.particles.trailLength);
+                this.trailParticles.speed = CONFIG.particles.speed;
+                
+                this.pointParticles = new PointParticleSystem(this.graph, CONFIG.particles.count);
+                this.pointParticles.speed = CONFIG.particles.speed;
+                
+                // Add the active one based on CONFIG
+                if (CONFIG.particles.type === 'trail') {
+                    this.scene.add(this.trailParticles.mesh);
+                    this.activeParticles = this.trailParticles;
+                } else {
+                    this.scene.add(this.pointParticles.mesh);
+                    this.activeParticles = this.pointParticles;
+                }
+            }
+            
+            switchParticleType(type) {
+                if (type === 'trail') {
+                    this.scene.remove(this.pointParticles.mesh);
+                    this.scene.add(this.trailParticles.mesh);
+                    this.activeParticles = this.trailParticles;
+                } else {
+                    this.scene.remove(this.trailParticles.mesh);
+                    this.scene.add(this.pointParticles.mesh);
+                    this.activeParticles = this.pointParticles;
+                }
+            }
+            
+            reinitializeActiveParticles() {
+                if (this.trailParticles) {
+                    this.trailParticles.reinitialize();
+                }
+                if (this.pointParticles) {
+                    this.pointParticles.reinitialize();
+                }
+            }
+            
+            setNodeMarkersVisible(visible) {
+                this.nodeMarkers.setVisible(visible);
+                this.edgeLines.setVisible(visible);
+            }
+            
+            toggleEditMode() {
+                this.editMode = !this.editMode;
+                const indicator = document.getElementById('mode-indicator');
+                
+                if (this.editMode) {
+                    indicator.textContent = 'Edit Mode';
+                    indicator.className = 'edit-mode';
+                    this.orbitControls.enabled = true;
+                } else {
+                    indicator.textContent = 'View Mode';
+                    indicator.className = 'view-mode';
+                    this.connectMode = false;
+                    this.connectSourceNode = null;
+                    this.nodeMarkers.setSelected(null);
+                }
+            }
+            
+            regenerateTerrain() {
+                this.heightmap.noise = new SimplexNoise();
+                this.heightmap.generate(CONFIG.terrain.noiseScale, CONFIG.terrain.heightScale);
+                this.terrain.updateFromHeightmap();
+                
+                // Update node heights and edge paths
+                for (const node of this.graph.nodes.values()) {
+                    node.updateHeight();
+                }
+                this.graph.updateEdgePaths();
+                this.nodeMarkers.update();
+                this.edgeLines.update();
+                
+                this.reinitializeActiveParticles();
+            }
+            
+            clearNodes() {
+                this.graph.clear();
+                this.nodeMarkers.clear();
+                this.edgeLines.clear();
+                
+                this.reinitializeActiveParticles();
+            }
+            
+            getTerrainIntersection(event) {
+                this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObject(this.terrain.mesh);
+                
+                return intersects.length > 0 ? intersects[0] : null;
+            }
+            
+            getNodeIntersection(event) {
+                this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const markers = this.nodeMarkers.getMarkerArray();
+                const intersects = this.raycaster.intersectObjects(markers);
+                
+                if (intersects.length > 0) {
+                    const nodeId = intersects[0].object.userData.nodeId;
+                    return this.graph.nodes.get(nodeId);
+                }
+                return null;
+            }
+            
+            onClick(event) {
+                if (!this.editMode) return;
+                
+                const clickedNode = this.getNodeIntersection(event);
+                
+                if (event.shiftKey) {
+                    // Connect mode
+                    if (clickedNode) {
+                        if (this.connectSourceNode && this.connectSourceNode !== clickedNode) {
+                            // Create edge
+                            this.graph.addEdge(this.connectSourceNode, clickedNode);
+                            this.edgeLines.update();
+                            this.reinitializeActiveParticles();
+                            this.connectSourceNode = null;
+                            this.nodeMarkers.setSelected(null);
+                        } else {
+                            // Set source node
+                            this.connectSourceNode = clickedNode;
+                            this.nodeMarkers.setSelected(clickedNode);
+                        }
+                    }
+                } else if (!this.draggingNode) {
+                    // Add new node on terrain click
+                    if (!clickedNode) {
+                        const terrainHit = this.getTerrainIntersection(event);
+                        if (terrainHit) {
+                            const node = this.graph.addNode(terrainHit.point.x, terrainHit.point.z);
+                            this.nodeMarkers.update();
+                            
+                            // Auto-connect to selected node if exists
+                            if (this.nodeMarkers.selectedNode) {
+                                this.graph.addEdge(this.nodeMarkers.selectedNode, node);
+                                this.edgeLines.update();
+                                this.reinitializeActiveParticles();
+                            }
+                            
+                            this.nodeMarkers.setSelected(node);
+                        }
+                    } else {
+                        this.nodeMarkers.setSelected(clickedNode);
+                    }
+                }
+            }
+            
+            onMouseDown(event) {
+                if (!this.editMode) return;
+                
+                const clickedNode = this.getNodeIntersection(event);
+                if (clickedNode && !event.shiftKey) {
+                    this.draggingNode = clickedNode;
+                    this.orbitControls.enabled = false;
+                }
+            }
+            
+            onMouseMove(event) {
+                if (!this.draggingNode) return;
+                
+                const terrainHit = this.getTerrainIntersection(event);
+                if (terrainHit) {
+                    this.draggingNode.setPosition(terrainHit.point.x, terrainHit.point.z);
+                    this.graph.updateEdgePaths();
+                    this.nodeMarkers.update();
+                    this.edgeLines.update();
+                }
+            }
+            
+            onMouseUp(event) {
+                if (this.draggingNode) {
+                    this.draggingNode = null;
+                    this.orbitControls.enabled = true;
+                    
+                    this.reinitializeActiveParticles();
+                }
+            }
+            
+            onKeyDown(event) {
+                if (event.key === 'e' || event.key === 'E') {
+                    this.toggleEditMode();
+                }
+                
+                if (event.key === 'Delete' || event.key === 'Backspace') {
+                    if (this.editMode && this.nodeMarkers.selectedNode) {
+                        this.graph.removeNode(this.nodeMarkers.selectedNode);
+                        this.nodeMarkers.setSelected(null);
+                        this.nodeMarkers.update();
+                        this.edgeLines.update();
+                        
+                        this.reinitializeActiveParticles();
+                    }
+                }
+                
+                if (event.key === 'Escape') {
+                    this.connectSourceNode = null;
+                    this.nodeMarkers.setSelected(null);
+                }
+            }
+            
+            onResize() {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                
+                this.camera.aspect = width / height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(width, height);
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                const delta = this.clock.getDelta();
+                
+                this.orbitControls.update();
+                
+                if (this.activeParticles && this.graph.edges.length > 0) {
+                    this.activeParticles.update(delta);
+                }
+                
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+        
+        // Start the application
+        new RiverVisualizer();
+    </script>
+</body>
+</html>
