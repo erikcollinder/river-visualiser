@@ -1,0 +1,3267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Landscape Visualizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    #canvas-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    #controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 320px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      background: rgba(15, 15, 25, 0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 20px;
+      z-index: 100;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    #controls.minimized {
+      transform: translateX(400px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    #panel-header h1 {
+      margin: 0;
+    }
+
+    #minimize-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    #minimize-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+    }
+
+    #settings-cog {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 40px;
+      height: 40px;
+      background: rgba(15, 15, 25, 0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 99;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease, background 0.2s;
+    }
+
+    #settings-cog:hover {
+      background: rgba(15, 15, 25, 0.95);
+      color: white;
+    }
+
+    #settings-cog.visible {
+      pointer-events: auto;
+    }
+
+    body:hover #settings-cog.visible {
+      opacity: 1;
+    }
+
+    #controls::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #controls::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #controls::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #fff;
+    }
+
+    .section {
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #6b8afd;
+      margin-bottom: 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+
+    .section-header:hover {
+      color: #8aa8ff;
+    }
+
+    .section-header::after {
+      content: '−';
+      font-size: 14px;
+      font-weight: 400;
+      transition: transform 0.2s ease;
+    }
+
+    .section.collapsed .section-header::after {
+      content: '+';
+    }
+
+    .section-content {
+      overflow: hidden;
+      transition: max-height 0.2s ease;
+    }
+
+    .section.collapsed .section-content {
+      display: none;
+    }
+
+    .control-group {
+      margin-bottom: 12px;
+    }
+
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #a0a0a0;
+      margin-bottom: 6px;
+    }
+
+    .control-value {
+      color: #6b8afd;
+      font-weight: 500;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 4px;
+      -webkit-appearance: none;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #6b8afd;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    input[type="number"] {
+      width: 100%;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-family: inherit;
+      font-size: 12px;
+      outline: none;
+    }
+
+    input[type="number"]:focus {
+      border-color: #6b8afd;
+    }
+
+    input[type="color"] {
+      width: 100%;
+      height: 30px;
+      padding: 0;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #6b8afd;
+      cursor: pointer;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-family: inherit;
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    select:focus {
+      border-color: #6b8afd;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      background: rgba(107, 138, 253, 0.2);
+      border: 1px solid rgba(107, 138, 253, 0.3);
+      border-radius: 6px;
+      color: #6b8afd;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    button:hover {
+      background: rgba(107, 138, 253, 0.3);
+      border-color: rgba(107, 138, 253, 0.5);
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .checkbox-group label {
+      margin-bottom: 0;
+      cursor: pointer;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .row > * {
+      flex: 1;
+    }
+
+    #info {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      z-index: 100;
+      transition: color 0.2s;
+    }
+
+    #info.drop-hint {
+      color: rgba(100, 200, 255, 0.9);
+    }
+
+    #drop-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(100, 200, 255, 0.05);
+      border: 2px dashed rgba(100, 200, 255, 0.4);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 50;
+    }
+
+    #drop-overlay.active {
+      opacity: 1;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="drop-overlay"></div>
+
+  <button id="settings-cog">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  </button>
+
+  <div id="controls">
+    <div id="panel-header">
+      <h1>Landscape Visualizer</h1>
+      <button id="minimize-btn" title="Minimize panel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </button>
+    </div>
+
+    <div class="section collapsed" data-section="terrain">
+      <div class="section-header">Terrain Generation</div>
+      <div class="section-content">
+        <div class="control-group">
+          <label>Mode</label>
+          <select id="terrainMode">
+            <option value="simplex">Simplex Noise</option>
+            <option value="sculpted" selected>Sculpted</option>
+            <option value="image">Image</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="highRes">
+            <label for="highRes">High-Res (512)</label>
+          </div>
+        </div>
+
+        <div id="simplex-controls" class="hidden">
+          <div class="control-group">
+            <label>Seed</label>
+            <div class="row">
+              <input type="number" id="seed" value="12345" min="0" max="999999">
+              <button id="randomize-seed" style="width: auto; padding: 8px 12px;">Random</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label>Height Scale <span class="control-value" id="heightScale-value">2.00</span></label>
+            <input type="range" id="heightScale" min="0.5" max="5" step="0.1" value="2">
+          </div>
+
+          <div class="control-group">
+            <label>Noise Scale <span class="control-value" id="noiseScale-value">0.50</span></label>
+            <input type="range" id="noiseScale" min="0.1" max="2" step="0.05" value="0.5">
+          </div>
+
+          <div class="control-group">
+            <label>Octaves <span class="control-value" id="octaves-value">6</span></label>
+            <input type="range" id="octaves" min="1" max="10" step="1" value="6">
+          </div>
+
+          <div class="control-group">
+            <label>Persistence <span class="control-value" id="persistence-value">0.50</span></label>
+            <input type="range" id="persistence" min="0.1" max="0.9" step="0.05" value="0.5">
+          </div>
+
+          <div class="control-group">
+            <label>Lacunarity <span class="control-value" id="lacunarity-value">2.00</span></label>
+            <input type="range" id="lacunarity" min="1.5" max="3" step="0.1" value="2">
+          </div>
+        </div>
+
+        <div id="sculpted-controls">
+          <div class="control-group">
+            <label>Seed</label>
+            <div class="row">
+              <input type="number" id="sculpted-seed" value="832570" min="0" max="999999">
+              <button id="sculpted-randomize-seed" style="width: auto; padding: 8px 12px;">Random</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label>Height Scale <span class="control-value" id="sculptedHeightScale-value">2.60</span></label>
+            <input type="range" id="sculptedHeightScale" min="0.5" max="6" step="0.1" value="2.6">
+          </div>
+
+          <div class="control-group">
+            <label>Macro Scale <span class="control-value" id="macroScale-value">0.17</span></label>
+            <input type="range" id="macroScale" min="0.05" max="0.5" step="0.01" value="0.17">
+          </div>
+
+          <div class="control-group">
+            <label>Macro Strength <span class="control-value" id="macroStrength-value">0.60</span></label>
+            <input type="range" id="macroStrength" min="0" max="1" step="0.05" value="0.6">
+          </div>
+
+          <div class="control-group">
+            <label>Warp Strength <span class="control-value" id="warpStrength-value">0.25</span></label>
+            <input type="range" id="warpStrength" min="0" max="1" step="0.05" value="0.25">
+          </div>
+
+          <div class="control-group">
+            <label>Ridge Mix <span class="control-value" id="ridgeMix-value">0.10</span></label>
+            <input type="range" id="ridgeMix" min="0" max="1" step="0.05" value="0.1">
+          </div>
+
+          <div class="control-group">
+            <label>Valley Bias <span class="control-value" id="valleyBias-value">0.42</span></label>
+            <input type="range" id="valleyBias" min="0" max="0.5" step="0.02" value="0.42">
+          </div>
+
+          <div class="control-group">
+            <label>Detail Scale <span class="control-value" id="detailScale-value">0.60</span></label>
+            <input type="range" id="detailScale" min="0.2" max="2" step="0.05" value="0.6">
+          </div>
+
+          <div class="control-group">
+            <label>Detail Strength <span class="control-value" id="detailStrength-value">0.26</span></label>
+            <input type="range" id="detailStrength" min="0" max="0.5" step="0.02" value="0.26">
+          </div>
+
+          <div class="control-group">
+            <label>Roughness <span class="control-value" id="roughness-value">0.02</span></label>
+            <input type="range" id="roughness" min="0" max="0.4" step="0.01" value="0.02">
+          </div>
+        </div>
+
+        <div id="image-controls" class="hidden">
+          <div class="control-group">
+            <label>Heightmap Image</label>
+            <input type="file" id="heightmapFile" accept="image/*">
+          </div>
+
+          <div class="control-group">
+            <label>Height Scale <span class="control-value" id="imageHeightScale-value">2.00</span></label>
+            <input type="range" id="imageHeightScale" min="0.5" max="5" step="0.1" value="2">
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="section collapsed" data-section="trimming">
+      <div class="section-header">Terrain Trimming</div>
+      <div class="section-content">
+        <div class="control-group">
+          <label>Floor <span class="control-value" id="levelFloor-value">0.15</span></label>
+          <input type="range" id="levelFloor" min="0" max="0.9" step="0.01" value="0.15">
+        </div>
+
+        <div class="control-group">
+          <label>Ceiling <span class="control-value" id="levelCeiling-value">1.00</span></label>
+          <input type="range" id="levelCeiling" min="0.1" max="1" step="0.01" value="1">
+        </div>
+
+        <div class="control-group" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+          <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7;">Clipping</label>
+        </div>
+
+        <div class="control-group">
+          <label>North <span class="control-value" id="clipNorth-value">0.01</span></label>
+          <input type="range" id="clipNorth" min="0" max="1" step="0.01" value="0.01">
+        </div>
+
+        <div class="control-group">
+          <label>East <span class="control-value" id="clipEast-value">0.01</span></label>
+          <input type="range" id="clipEast" min="0" max="1" step="0.01" value="0.01">
+        </div>
+
+        <div class="control-group">
+          <label>South <span class="control-value" id="clipSouth-value">0.01</span></label>
+          <input type="range" id="clipSouth" min="0" max="1" step="0.01" value="0.01">
+        </div>
+
+        <div class="control-group">
+          <label>West <span class="control-value" id="clipWest-value">0.01</span></label>
+          <input type="range" id="clipWest" min="0" max="1" step="0.01" value="0.01">
+        </div>
+      </div>
+    </div>
+
+    <div class="section collapsed" data-section="color">
+      <div class="section-header">Colour Plane</div>
+      <div class="section-content">
+        <div class="control-group">
+          <label>Mode</label>
+          <select id="colorMode">
+            <option value="height" selected>Height-based</option>
+            <option value="slope">Slope-based (Normal Map)</option>
+            <option value="iridescent">Iridescent</option>
+          </select>
+        </div>
+
+        <div id="height-color-controls">
+          <div class="control-group">
+            <label>Low Color</label>
+            <input type="color" id="lowColor" value="#516a85">
+          </div>
+
+          <div class="control-group">
+            <label>Mid Color</label>
+            <input type="color" id="midColor" value="#8b7355">
+          </div>
+
+          <div class="control-group">
+            <label>High Color</label>
+            <input type="color" id="highColor" value="#e6c56b">
+          </div>
+        </div>
+
+        <div id="slope-controls" class="hidden">
+          <div class="control-group">
+            <label>Rotation Angle <span class="control-value" id="slopeAngle-value">0°</span></label>
+            <input type="range" id="slopeAngle" min="0" max="360" step="1" value="0">
+          </div>
+        </div>
+
+        <div id="iridescent-controls" class="hidden">
+          <div class="control-group">
+            <label>Speed <span class="control-value" id="iridSpeed-value">1.00</span></label>
+            <input type="range" id="iridSpeed" min="0" max="3" step="0.1" value="1">
+          </div>
+
+          <div class="control-group">
+            <label>Scale <span class="control-value" id="iridScale-value">2.00</span></label>
+            <input type="range" id="iridScale" min="0.5" max="5" step="0.1" value="2">
+          </div>
+
+          <div class="control-group">
+            <label>Intensity <span class="control-value" id="iridIntensity-value">0.80</span></label>
+            <input type="range" id="iridIntensity" min="0" max="1" step="0.05" value="0.8">
+          </div>
+
+          <div class="control-group">
+            <label>Base Hue <span class="control-value" id="iridBaseHue-value">0.00</span></label>
+            <input type="range" id="iridBaseHue" min="0" max="1" step="0.05" value="0">
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="section collapsed" data-section="contours">
+      <div class="section-header">Contours</div>
+      <div class="section-content">
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="contoursEnabled" checked>
+            <label for="contoursEnabled">Enable Contours</label>
+          </div>
+        </div>
+
+        <div id="contour-controls">
+          <div class="control-group">
+            <label>Interval <span class="control-value" id="contourInterval-value">0.05</span></label>
+            <input type="range" id="contourInterval" min="0.01" max="0.5" step="0.01" value="0.05">
+          </div>
+
+          <div class="control-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="shoreLines" checked>
+              <label for="shoreLines">Shore Lines</label>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label>Color Mode</label>
+            <select id="contourColorMode">
+              <option value="solid">Solid Color</option>
+              <option value="terrain" selected>From Terrain</option>
+            </select>
+          </div>
+
+          <div class="control-group hidden" id="contourColor-group">
+            <label>Color</label>
+            <input type="color" id="contourColor" value="#000000">
+          </div>
+
+          <div class="control-group">
+            <label>Opacity <span class="control-value" id="contourOpacity-value">1.00</span></label>
+            <input type="range" id="contourOpacity" min="0.1" max="1" step="0.05" value="1.0">
+          </div>
+
+          <div class="control-group">
+            <label>Line Thickness <span class="control-value" id="contourThickness-value">1.0</span></label>
+            <input type="range" id="contourThickness" min="0.5" max="8" step="0.5" value="1">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section collapsed" data-section="surface">
+      <div class="section-header">Matt Surface</div>
+      <div class="section-content">
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="surfaceEnabled">
+            <label for="surfaceEnabled">Enable Surface</label>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Mode</label>
+          <select id="surfaceMode">
+            <option value="plane" selected>Plane</option>
+            <option value="wireframe">Wireframe</option>
+            <option value="pointGrid">Point Grid</option>
+            <option value="background">Background</option>
+          </select>
+        </div>
+
+        <div id="pointGrid-controls" class="hidden">
+          <div class="control-group">
+            <label>Point Size <span class="control-value" id="pointSize-value">1.0</span></label>
+            <input type="range" id="pointSize" min="0.5" max="10" step="0.5" value="1">
+          </div>
+
+          <div class="control-group">
+            <label>Grid Scale <span class="control-value" id="gridScale-value">1</span></label>
+            <input type="range" id="gridScale" min="1" max="8" step="1" value="1">
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="reliefShading">
+            <label for="reliefShading">Relief Shading</label>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Opacity <span class="control-value" id="surfaceOpacity-value">1.00</span></label>
+          <input type="range" id="surfaceOpacity" min="0.1" max="1" step="0.05" value="1">
+        </div>
+      </div>
+    </div>
+
+    <div class="section collapsed" data-section="metallic">
+      <div class="section-header">Metallic Surface</div>
+      <div class="section-content">
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="metallicShading" checked>
+            <label for="metallicShading">Enable</label>
+          </div>
+        </div>
+
+        <div id="metallic-controls">
+          <div class="control-group">
+            <label>Opacity <span class="control-value" id="metallicOpacity-value">0.15</span></label>
+            <input type="range" id="metallicOpacity" min="0" max="1" step="0.05" value="0.15">
+          </div>
+
+          <div class="control-group">
+            <label>Base Brightness <span class="control-value" id="baseBrightness-value">1.00</span></label>
+            <input type="range" id="baseBrightness" min="0" max="2" step="0.05" value="1.0">
+          </div>
+
+          <div class="control-group">
+            <label>Shadow Lift <span class="control-value" id="shadowLift-value">0.90</span></label>
+            <input type="range" id="shadowLift" min="0" max="1" step="0.05" value="0.9">
+          </div>
+
+          <div class="control-group">
+            <label>Shininess <span class="control-value" id="shininess-value">2.80</span></label>
+            <input type="range" id="shininess" min="0.5" max="5" step="0.1" value="2.8">
+          </div>
+
+          <div class="control-group">
+            <label>Edge Sharpness <span class="control-value" id="edgeSharpness-value">2.00</span></label>
+            <input type="range" id="edgeSharpness" min="1" max="8" step="0.5" value="2">
+          </div>
+
+          <div class="control-group">
+            <label>Edge Brightness <span class="control-value" id="edgeBrightness-value">1.00</span></label>
+            <input type="range" id="edgeBrightness" min="0" max="5" step="0.1" value="1">
+          </div>
+
+          <div class="control-group">
+            <label>Iridescence <span class="control-value" id="iridescence-value">0.00</span></label>
+            <input type="range" id="iridescence" min="0" max="1" step="0.05" value="0">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section collapsed" data-section="camera">
+      <div class="section-header">Camera</div>
+      <div class="section-content">
+        <div class="control-group">
+          <label>Projection</label>
+          <select id="cameraMode">
+            <option value="isometric">Isometric (Orthographic)</option>
+            <option value="perspective">Perspective</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="autoRotate">
+            <label for="autoRotate">Auto-Rotate</label>
+          </div>
+        </div>
+
+        <div class="control-group hidden" id="rotateSpeed-group">
+          <label>Rotate Speed <span class="control-value" id="rotateSpeed-value">1.00</span></label>
+          <input type="range" id="rotateSpeed" min="0.1" max="5" step="0.1" value="1">
+        </div>
+
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="autoPan">
+            <label for="autoPan">Auto-Pan</label>
+          </div>
+        </div>
+
+        <div class="control-group hidden" id="panSpeed-group">
+          <label>Pan Speed <span class="control-value" id="panSpeed-value">0.10</span></label>
+          <input type="range" id="panSpeed" min="0.01" max="0.5" step="0.01" value="0.1">
+        </div>
+      </div>
+    </div>
+
+    <div class="section collapsed" data-section="scene">
+      <div class="section-header">Scene</div>
+      <div class="section-content">
+        <div class="control-group">
+          <label>Background Color</label>
+          <input type="color" id="backgroundColor" value="#ffffff">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="info">
+    Scroll to zoom | Drag to pan | Right-drag to rotate (perspective mode)
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "d3": "https://cdn.jsdelivr.net/npm/d3@7/+esm"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { Line2 } from 'three/addons/lines/Line2.js';
+    import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+    import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+    import * as d3 from 'd3';
+
+    // ============================================
+    // CONFIG
+    // ============================================
+    const CONFIG = {
+      terrain: {
+        mode: 'sculpted',        // 'simplex' | 'sculpted' | 'image'
+        size: 20,
+        segments: 256,
+        highRes: false,          // Toggle for 512 segments (4x polygons)
+        heightScale: 2.0,
+        noiseScale: 0.5,
+        octaves: 6,
+        persistence: 0.5,
+        lacunarity: 2.0,
+        seed: 12345,
+        imageData: null,         // ImageData from canvas
+        imageHeightScale: 2.0,   // Height scale for image mode
+        // Sculpted mode parameters
+        sculpted: {
+          seed: 832570,
+          heightScale: 2.6,
+          macroScale: 0.17,      // Scale of large features (valleys, mountains)
+          macroStrength: 0.6,    // Influence of large features
+          warpStrength: 0.25,    // Domain warping intensity
+          ridgeMix: 0.1,         // Blend between smooth and ridged noise
+          valleyBias: 0.42,      // Push terrain toward valleys
+          detailScale: 0.6,      // Scale of fine detail
+          detailStrength: 0.26,  // Influence of fine detail
+          roughness: 0.02        // High-frequency surface bumpiness
+        },
+        // Post-processing (levels)
+        levelFloor: 0.15,        // Clamp heights below this (normalized 0-1)
+        levelCeiling: 1.0,       // Clamp heights above this (normalized 0-1)
+        // Clipping
+        clipNorth: 0.01,         // Clip from north edge (0-1, where 1 = fully clipped)
+        clipEast: 0.01,          // Clip from east edge
+        clipSouth: 0.01,         // Clip from south edge
+        clipWest: 0.01           // Clip from west edge
+      },
+      color: {
+        mode: 'height',  // 'height' | 'slope' | 'iridescent' | 'liquidMetal'
+        // Height mode
+        lowColor: '#516a85',
+        midColor: '#8b7355',
+        highColor: '#e6c56b',
+        // Slope mode
+        slopeAngle: 0.0,  // Rotation angle in degrees (0-360)
+        // Iridescent mode
+        iridescent: {
+          speed: 1.0,
+          scale: 2.0,
+          intensity: 0.8,
+          baseHue: 0.0
+        }
+      },
+      contours: {
+        enabled: true,
+        interval: 0.05,
+        shoreLines: true,       // Draw contours at terrain min/max edges
+        colorMode: 'terrain',  // 'solid' | 'terrain'
+        color: '#000000',
+        opacity: 1.00,
+        lineWidth: 1
+      },
+      surface: {
+        enabled: false,
+        mode: 'plane',  // 'plane' | 'wireframe' | 'pointGrid'
+        pointSize: 1.0,
+        gridScale: 1,
+        reliefShading: false,
+        metallicShading: true,
+        metallic: {
+          opacity: 0.15,
+          baseBrightness: 1.0,
+          shadowLift: 0.9,
+          shininess: 2.8,
+          edgeSharpness: 2.0,
+          edgeBrightness: 1.0,
+          iridescence: 0.0
+        },
+        opacity: 1.0
+      },
+      camera: {
+        mode: 'isometric',
+        autoRotate: false,
+        rotateSpeed: 1.0,
+        autoPan: false,
+        panSpeed: 0.1,
+        panDirection: { x: 1, z: 0 }
+      },
+      scene: {
+        backgroundColor: '#ffffff'
+      }
+    };
+
+    // ============================================
+    // SimplexNoise
+    // ============================================
+    class SimplexNoise {
+      constructor(seed = Math.random() * 10000) {
+        this.p = new Uint8Array(256);
+        this.perm = new Uint8Array(512);
+        this.permMod12 = new Uint8Array(512);
+
+        for (let i = 0; i < 256; i++) {
+          this.p[i] = i;
+        }
+
+        // Fisher-Yates shuffle with seed
+        let s = seed;
+        for (let i = 255; i > 0; i--) {
+          s = (s * 16807) % 2147483647;
+          const j = s % (i + 1);
+          [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
+        }
+
+        for (let i = 0; i < 512; i++) {
+          this.perm[i] = this.p[i & 255];
+          this.permMod12[i] = this.perm[i] % 12;
+        }
+
+        this.grad3 = new Float32Array([
+          1,1,0, -1,1,0, 1,-1,0, -1,-1,0,
+          1,0,1, -1,0,1, 1,0,-1, -1,0,-1,
+          0,1,1, 0,-1,1, 0,1,-1, 0,-1,-1
+        ]);
+
+        this.F2 = 0.5 * (Math.sqrt(3) - 1);
+        this.G2 = (3 - Math.sqrt(3)) / 6;
+      }
+
+      noise2D(x, y) {
+        const F2 = this.F2;
+        const G2 = this.G2;
+
+        const s = (x + y) * F2;
+        const i = Math.floor(x + s);
+        const j = Math.floor(y + s);
+
+        const t = (i + j) * G2;
+        const X0 = i - t;
+        const Y0 = j - t;
+        const x0 = x - X0;
+        const y0 = y - Y0;
+
+        let i1, j1;
+        if (x0 > y0) { i1 = 1; j1 = 0; }
+        else { i1 = 0; j1 = 1; }
+
+        const x1 = x0 - i1 + G2;
+        const y1 = y0 - j1 + G2;
+        const x2 = x0 - 1 + 2 * G2;
+        const y2 = y0 - 1 + 2 * G2;
+
+        const ii = i & 255;
+        const jj = j & 255;
+
+        let n0 = 0, n1 = 0, n2 = 0;
+
+        let t0 = 0.5 - x0*x0 - y0*y0;
+        if (t0 >= 0) {
+          const gi0 = this.permMod12[ii + this.perm[jj]] * 3;
+          t0 *= t0;
+          n0 = t0 * t0 * (this.grad3[gi0] * x0 + this.grad3[gi0+1] * y0);
+        }
+
+        let t1 = 0.5 - x1*x1 - y1*y1;
+        if (t1 >= 0) {
+          const gi1 = this.permMod12[ii + i1 + this.perm[jj + j1]] * 3;
+          t1 *= t1;
+          n1 = t1 * t1 * (this.grad3[gi1] * x1 + this.grad3[gi1+1] * y1);
+        }
+
+        let t2 = 0.5 - x2*x2 - y2*y2;
+        if (t2 >= 0) {
+          const gi2 = this.permMod12[ii + 1 + this.perm[jj + 1]] * 3;
+          t2 *= t2;
+          n2 = t2 * t2 * (this.grad3[gi2] * x2 + this.grad3[gi2+1] * y2);
+        }
+
+        return 70 * (n0 + n1 + n2);
+      }
+
+      fbm(x, y, octaves, lacunarity, persistence) {
+        let total = 0;
+        let frequency = 1;
+        let amplitude = 1;
+        let maxValue = 0;
+
+        for (let i = 0; i < octaves; i++) {
+          total += this.noise2D(x * frequency, y * frequency) * amplitude;
+          maxValue += amplitude;
+          amplitude *= persistence;
+          frequency *= lacunarity;
+        }
+
+        return total / maxValue;
+      }
+    }
+
+    // ============================================
+    // Heightmap
+    // ============================================
+    class Heightmap {
+      constructor(size, segments) {
+        this.size = size;
+        this.segments = segments;
+        this.data = new Float32Array((segments + 1) * (segments + 1));
+        this.minHeight = 0;
+        this.maxHeight = 1;
+        this.noise = null;
+      }
+
+      generate(config) {
+        this.noise = new SimplexNoise(config.seed);
+        const { noiseScale, heightScale, octaves, persistence, lacunarity } = config;
+
+        let min = Infinity;
+        let max = -Infinity;
+
+        for (let z = 0; z <= this.segments; z++) {
+          for (let x = 0; x <= this.segments; x++) {
+            const nx = (x / this.segments - 0.5) * noiseScale * 4;
+            const nz = (z / this.segments - 0.5) * noiseScale * 4;
+
+            let h = this.noise.fbm(nx, nz, octaves, lacunarity, persistence);
+            h = (h + 1) * 0.5; // Normalize to 0-1
+            h = Math.pow(h, 1.5); // Add some contrast
+            h *= heightScale;
+
+            this.data[z * (this.segments + 1) + x] = h;
+            min = Math.min(min, h);
+            max = Math.max(max, h);
+          }
+        }
+
+        this.minHeight = min;
+        this.maxHeight = max;
+      }
+
+      loadFromImage(imageData, heightScale) {
+        const { width, height, data } = imageData;
+
+        let min = Infinity;
+        let max = -Infinity;
+
+        for (let z = 0; z <= this.segments; z++) {
+          for (let x = 0; x <= this.segments; x++) {
+            // Map grid coords to image coords
+            const imgX = Math.floor((x / this.segments) * (width - 1));
+            const imgY = Math.floor((z / this.segments) * (height - 1));
+
+            // Get pixel (RGBA)
+            const idx = (imgY * width + imgX) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+
+            // Luminosity formula: 0.299*R + 0.587*G + 0.114*B
+            const luminosity = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+            // Scale to height
+            const h = luminosity * heightScale;
+
+            this.data[z * (this.segments + 1) + x] = h;
+            min = Math.min(min, h);
+            max = Math.max(max, h);
+          }
+        }
+
+        this.minHeight = min;
+        this.maxHeight = max;
+      }
+
+      generateSculpted(config) {
+        const {
+          seed,
+          heightScale,
+          macroScale,
+          macroStrength,
+          warpStrength,
+          ridgeMix,
+          valleyBias,
+          detailScale,
+          detailStrength,
+          roughness
+        } = config;
+
+        // Create multiple noise instances with different seeds for variety
+        const noiseMain = new SimplexNoise(seed);
+        const noiseWarpX = new SimplexNoise(seed + 1000);
+        const noiseWarpZ = new SimplexNoise(seed + 2000);
+        const noiseMacro = new SimplexNoise(seed + 3000);
+        const noiseRidge = new SimplexNoise(seed + 4000);
+        const noiseDetail = new SimplexNoise(seed + 5000);
+        const noiseRoughness = new SimplexNoise(seed + 6000);
+
+        let min = Infinity;
+        let max = -Infinity;
+
+        for (let z = 0; z <= this.segments; z++) {
+          for (let x = 0; x <= this.segments; x++) {
+            // Normalized coordinates (-0.5 to 0.5)
+            const nx = x / this.segments - 0.5;
+            const nz = z / this.segments - 0.5;
+
+            // === DOMAIN WARPING ===
+            // Use noise to distort the sampling coordinates
+            const warpScale = 2.0;
+            const warpX = noiseWarpX.fbm(nx * warpScale, nz * warpScale, 3, 2.0, 0.5);
+            const warpZ = noiseWarpZ.fbm(nx * warpScale, nz * warpScale, 3, 2.0, 0.5);
+
+            const warpedX = nx + warpX * warpStrength * 0.5;
+            const warpedZ = nz + warpZ * warpStrength * 0.5;
+
+            // === MACRO LAYER (large-scale landforms) ===
+            // Very low frequency noise for valleys and mountain ranges
+            const macroNoise = noiseMacro.fbm(
+              warpedX * macroScale * 4,
+              warpedZ * macroScale * 4,
+              2,  // Few octaves for smooth, broad features
+              2.0,
+              0.5
+            );
+            // Normalize and apply contrast
+            let macro = (macroNoise + 1) * 0.5;
+            macro = Math.pow(macro, 1.2);  // Slight contrast boost
+
+            // === RIDGE NOISE (sharp ridges and valleys) ===
+            // Take absolute value and invert to create ridges
+            const ridgeRaw = noiseRidge.fbm(
+              warpedX * 0.6,
+              warpedZ * 0.6,
+              4,
+              2.2,
+              0.5
+            );
+            // Ridge transformation: 1 - abs(noise) creates sharp ridges
+            let ridge = 1.0 - Math.abs(ridgeRaw);
+            ridge = Math.pow(ridge, 2);  // Sharpen the ridges
+
+            // === MAIN TERRAIN LAYER ===
+            // Standard FBM at medium scale
+            const mainNoise = noiseMain.fbm(
+              warpedX * 1.5,
+              warpedZ * 1.5,
+              5,
+              2.0,
+              0.5
+            );
+            let main = (mainNoise + 1) * 0.5;
+            main = Math.pow(main, 1.5);
+
+            // === DETAIL LAYER (fine texture) ===
+            const detailNoise = noiseDetail.fbm(
+              warpedX * detailScale * 8,
+              warpedZ * detailScale * 8,
+              3,
+              2.5,
+              0.4
+            );
+            const detail = detailNoise * detailStrength;
+
+            // === COMBINE LAYERS ===
+            // Blend smooth main with ridged version
+            const mainBlended = main * (1 - ridgeMix) + ridge * ridgeMix;
+
+            // Combine macro and main
+            let h = mainBlended * (1 - macroStrength) + macro * macroStrength;
+
+            // Modulate detail by macro (less detail in valleys)
+            h += detail * (0.5 + macro * 0.5);
+
+            // === VALLEY BIAS ===
+            // Push values toward lower end to create more valleys
+            if (valleyBias > 0) {
+              // Use a power curve to bias toward valleys
+              h = Math.pow(h, 1 + valleyBias);
+            }
+
+            // === ROUGHNESS (high-frequency surface texture) ===
+            // Very high frequency noise for small bumps and surface texture
+            if (roughness > 0) {
+              // Use raw coordinates (not warped) for consistent texture
+              const roughnessNoise = noiseRoughness.fbm(
+                nx * 40,  // Higher frequency for finer bumps
+                nz * 40,
+                2,        // Few octaves for speed
+                2.0,
+                0.5
+              );
+              h += roughnessNoise * roughness * 0.5;
+            }
+
+            // === EDGE FALLOFF (optional - creates island-like terrain) ===
+            // Uncomment if you want edges to fall to sea level
+            // const edgeDist = Math.max(Math.abs(nx), Math.abs(nz)) * 2;
+            // const edgeFalloff = 1 - Math.pow(Math.max(0, edgeDist - 0.5) * 2, 2);
+            // h *= Math.max(0, edgeFalloff);
+
+            // Apply final height scale
+            h *= heightScale;
+
+            this.data[z * (this.segments + 1) + x] = h;
+            min = Math.min(min, h);
+            max = Math.max(max, h);
+          }
+        }
+
+        this.minHeight = min;
+        this.maxHeight = max;
+      }
+
+      sampleHeight(worldX, worldZ) {
+        // Convert world coords to grid coords
+        const halfSize = this.size / 2;
+        const gx = ((worldX + halfSize) / this.size) * this.segments;
+        const gz = ((worldZ + halfSize) / this.size) * this.segments;
+
+        const x0 = Math.floor(gx);
+        const z0 = Math.floor(gz);
+        const x1 = Math.min(x0 + 1, this.segments);
+        const z1 = Math.min(z0 + 1, this.segments);
+
+        const fx = gx - x0;
+        const fz = gz - z0;
+
+        const h00 = this.data[z0 * (this.segments + 1) + x0];
+        const h10 = this.data[z0 * (this.segments + 1) + x1];
+        const h01 = this.data[z1 * (this.segments + 1) + x0];
+        const h11 = this.data[z1 * (this.segments + 1) + x1];
+
+        const h0 = h00 + (h10 - h00) * fx;
+        const h1 = h01 + (h11 - h01) * fx;
+
+        return h0 + (h1 - h0) * fz;
+      }
+
+      getGradient(worldX, worldZ) {
+        const eps = this.size / this.segments;
+        const hL = this.sampleHeight(worldX - eps, worldZ);
+        const hR = this.sampleHeight(worldX + eps, worldZ);
+        const hD = this.sampleHeight(worldX, worldZ - eps);
+        const hU = this.sampleHeight(worldX, worldZ + eps);
+
+        const dx = (hR - hL) / (2 * eps);
+        const dz = (hU - hD) / (2 * eps);
+
+        return {
+          x: dx,
+          z: dz,
+          magnitude: Math.sqrt(dx * dx + dz * dz)
+        };
+      }
+
+      getNormal(worldX, worldZ) {
+        const grad = this.getGradient(worldX, worldZ);
+        // Normal is (-dh/dx, 1, -dh/dz) normalized
+        const nx = -grad.x;
+        const ny = 1;
+        const nz = -grad.z;
+        const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        return {
+          x: nx / len,
+          y: ny / len,
+          z: nz / len
+        };
+      }
+
+      getSlope(worldX, worldZ) {
+        const normal = this.getNormal(worldX, worldZ);
+        // Slope angle in degrees (0 = flat, 90 = vertical)
+        return Math.acos(normal.y) * (180 / Math.PI);
+      }
+
+      toContourGrid() {
+        // Return flat array for d3.contours (already in correct format)
+        return this.data;
+      }
+
+      applyLevels(floor, ceiling) {
+        // Skip if no adjustment needed
+        if (floor === 0 && ceiling === 1) return;
+
+        // Ensure floor < ceiling
+        if (floor >= ceiling) return;
+
+        // First, normalize current heights to 0-1 range based on actual min/max
+        const range = this.maxHeight - this.minHeight;
+        if (range === 0) return;
+
+        let newMin = Infinity;
+        let newMax = -Infinity;
+
+        for (let i = 0; i < this.data.length; i++) {
+          // Normalize to 0-1
+          let normalized = (this.data[i] - this.minHeight) / range;
+
+          // Apply floor/ceiling clamp
+          if (normalized < floor) {
+            normalized = 0;
+          } else if (normalized > ceiling) {
+            normalized = 1;
+          } else {
+            // Remap the middle range to 0-1
+            normalized = (normalized - floor) / (ceiling - floor);
+          }
+
+          // Scale back to original height range
+          const h = normalized * range + this.minHeight;
+          this.data[i] = h;
+
+          newMin = Math.min(newMin, h);
+          newMax = Math.max(newMax, h);
+        }
+
+        this.minHeight = newMin;
+        this.maxHeight = newMax;
+      }
+    }
+
+    // ============================================
+    // ColorPlane
+    // ============================================
+    class ColorPlane {
+      constructor(heightmap) {
+        this.heightmap = heightmap;
+        this.texture = null;
+        this.mode = CONFIG.color.mode;
+      }
+
+      hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+          r: parseInt(result[1], 16) / 255,
+          g: parseInt(result[2], 16) / 255,
+          b: parseInt(result[3], 16) / 255
+        } : { r: 0, g: 0, b: 0 };
+      }
+
+      lerpColor(c1, c2, t) {
+        return {
+          r: c1.r + (c2.r - c1.r) * t,
+          g: c1.g + (c2.g - c1.g) * t,
+          b: c1.b + (c2.b - c1.b) * t
+        };
+      }
+
+      generate() {
+        const segments = this.heightmap.segments;
+        const size = (segments + 1) * (segments + 1);
+        const data = new Uint8Array(size * 4); // RGBA
+
+        if (this.mode === 'height') {
+          const lowColor = this.hexToRgb(CONFIG.color.lowColor);
+          const midColor = this.hexToRgb(CONFIG.color.midColor);
+          const highColor = this.hexToRgb(CONFIG.color.highColor);
+          const range = this.heightmap.maxHeight - this.heightmap.minHeight;
+
+          for (let i = 0; i < size; i++) {
+            const h = this.heightmap.data[i];
+            const t = range > 0 ? (h - this.heightmap.minHeight) / range : 0;
+
+            let color;
+            if (t < 0.5) {
+              color = this.lerpColor(lowColor, midColor, t * 2);
+            } else {
+              color = this.lerpColor(midColor, highColor, (t - 0.5) * 2);
+            }
+
+            data[i * 4] = Math.floor(color.r * 255);
+            data[i * 4 + 1] = Math.floor(color.g * 255);
+            data[i * 4 + 2] = Math.floor(color.b * 255);
+            data[i * 4 + 3] = 255;
+          }
+        } else {
+          // Slope mode (normal map style)
+          const halfSize = this.heightmap.size / 2;
+          const step = this.heightmap.size / segments;
+          const angleRad = (CONFIG.color.slopeAngle * Math.PI) / 180;
+          const cosA = Math.cos(angleRad);
+          const sinA = Math.sin(angleRad);
+
+          for (let z = 0; z <= segments; z++) {
+            for (let x = 0; x <= segments; x++) {
+              const worldX = -halfSize + x * step;
+              const worldZ = -halfSize + z * step;
+              const normal = this.heightmap.getNormal(worldX, worldZ);
+
+              // Rotate normal around Y axis
+              const rotatedX = normal.x * cosA + normal.z * sinA;
+              const rotatedZ = -normal.x * sinA + normal.z * cosA;
+
+              const i = z * (segments + 1) + x;
+              data[i * 4] = Math.floor((rotatedX + 1) * 0.5 * 255);     // R
+              data[i * 4 + 1] = Math.floor((rotatedZ + 1) * 0.5 * 255); // G
+              data[i * 4 + 2] = Math.floor(normal.y * 255);              // B
+              data[i * 4 + 3] = 255;
+            }
+          }
+        }
+
+        if (this.texture) {
+          this.texture.dispose();
+        }
+
+        this.texture = new THREE.DataTexture(
+          data,
+          segments + 1,
+          segments + 1,
+          THREE.RGBAFormat
+        );
+        this.texture.colorSpace = THREE.LinearSRGBColorSpace;
+        this.texture.flipY = true;
+        this.texture.needsUpdate = true;
+        this.texture.magFilter = THREE.LinearFilter;
+        this.texture.minFilter = THREE.LinearFilter;
+
+        return this.texture;
+      }
+
+      setMode(mode) {
+        this.mode = mode;
+        this.generate();
+      }
+
+      getTexture() {
+        return this.texture;
+      }
+
+      // HSV to RGB conversion (JS equivalent of shader)
+      hsv2rgb(h, s, v) {
+        const i = Math.floor(h * 6);
+        const f = h * 6 - i;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+
+        let r, g, b;
+        switch (i % 6) {
+          case 0: r = v; g = t; b = p; break;
+          case 1: r = q; g = v; b = p; break;
+          case 2: r = p; g = v; b = t; break;
+          case 3: r = p; g = q; b = v; break;
+          case 4: r = t; g = p; b = v; break;
+          case 5: r = v; g = p; b = q; break;
+        }
+        return { r, g, b };
+      }
+
+      sampleIridescent(uv, height) {
+        const time = 0; // Static snapshot
+        const { speed, scale, intensity, baseHue } = CONFIG.color.iridescent;
+
+        const angle = Math.atan2(uv.y - 0.5, uv.x - 0.5);
+        const dist = Math.sqrt((uv.x - 0.5) ** 2 + (uv.y - 0.5) ** 2);
+
+        const phase = height * scale + angle * 0.3 + dist * 2.0 + time * speed;
+        const hue = ((phase + baseHue) % 1 + 1) % 1; // fract equivalent
+
+        return this.hsv2rgb(hue, intensity, 0.9 + height * 0.1);
+      }
+
+      sampleColor(worldX, worldZ) {
+        const segments = this.heightmap.segments;
+        const halfSize = this.heightmap.size / 2;
+
+        // Convert world coords to UV (0-1)
+        const uv = {
+          x: (worldX + halfSize) / this.heightmap.size,
+          y: (worldZ + halfSize) / this.heightmap.size
+        };
+
+        // Get normalized height
+        const h = this.heightmap.sampleHeight(worldX, worldZ);
+        const range = this.heightmap.maxHeight - this.heightmap.minHeight;
+        const normalizedHeight = range > 0 ? (h - this.heightmap.minHeight) / range : 0;
+
+        // Handle animated modes with static snapshot
+        if (CONFIG.color.mode === 'iridescent') {
+          return this.sampleIridescent(uv, normalizedHeight);
+        }
+
+        // For texture-based modes, sample from texture or compute directly
+        const gx = uv.x * segments;
+        const gz = uv.y * segments;
+
+        // Clamp to valid range
+        const x = Math.max(0, Math.min(segments, Math.round(gx)));
+        const z = Math.max(0, Math.min(segments, Math.round(gz)));
+
+        // Get index into texture data
+        const i = z * (segments + 1) + x;
+
+        // Read from the texture's image data
+        if (this.texture && this.texture.image && this.texture.image.data) {
+          const data = this.texture.image.data;
+          return {
+            r: data[i * 4] / 255,
+            g: data[i * 4 + 1] / 255,
+            b: data[i * 4 + 2] / 255
+          };
+        }
+
+        // Fallback: compute color directly
+        if (this.mode === 'height') {
+          const t = normalizedHeight;
+
+          const lowColor = this.hexToRgb(CONFIG.color.lowColor);
+          const midColor = this.hexToRgb(CONFIG.color.midColor);
+          const highColor = this.hexToRgb(CONFIG.color.highColor);
+
+          if (t < 0.5) {
+            return this.lerpColor(lowColor, midColor, t * 2);
+          } else {
+            return this.lerpColor(midColor, highColor, (t - 0.5) * 2);
+          }
+        } else {
+          const normal = this.heightmap.getNormal(worldX, worldZ);
+          return {
+            r: (normal.x + 1) * 0.5,
+            g: (normal.z + 1) * 0.5,
+            b: normal.y
+          };
+        }
+      }
+    }
+
+    // ============================================
+    // ContourLayer
+    // ============================================
+    class ContourLayer {
+      constructor(heightmap, colorPlane, scene, renderer) {
+        this.heightmap = heightmap;
+        this.colorPlane = colorPlane;
+        this.scene = scene;
+        this.renderer = renderer;
+        this.group = new THREE.Group();
+        this.scene.add(this.group);
+      }
+
+      generate() {
+        // Clear existing contours
+        while (this.group.children.length > 0) {
+          const child = this.group.children[0];
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+          this.group.remove(child);
+        }
+
+        if (!CONFIG.contours.enabled) return;
+
+        const segments = this.heightmap.segments;
+        const data = this.heightmap.toContourGrid();
+
+        // Calculate clipping boundaries in world coordinates
+        const halfSize = this.heightmap.size * 0.5;
+        const clipBounds = {
+          north: halfSize - CONFIG.terrain.clipNorth * this.heightmap.size,  // positive z boundary
+          south: -halfSize + CONFIG.terrain.clipSouth * this.heightmap.size, // negative z boundary
+          east: halfSize - CONFIG.terrain.clipEast * this.heightmap.size,    // positive x boundary
+          west: -halfSize + CONFIG.terrain.clipWest * this.heightmap.size    // negative x boundary
+        };
+
+        // Generate thresholds
+        const { interval, shoreLines } = CONFIG.contours;
+        const thresholds = [];
+
+        // Add shore line at bottom edge (just above minHeight)
+        if (shoreLines) {
+          thresholds.push(this.heightmap.minHeight + 0.001);
+        }
+
+        // Regular interval thresholds
+        const regularThresholds = d3.range(
+          Math.ceil(this.heightmap.minHeight / interval) * interval,
+          this.heightmap.maxHeight,
+          interval
+        );
+        thresholds.push(...regularThresholds);
+
+        // Add shore line at top edge (just below maxHeight)
+        if (shoreLines) {
+          thresholds.push(this.heightmap.maxHeight - 0.001);
+        }
+
+        // Create contour generator
+        const contourGenerator = d3.contours()
+          .size([segments + 1, segments + 1])
+          .thresholds(thresholds);
+
+        const contours = contourGenerator(data);
+
+        // Get renderer resolution for LineMaterial
+        const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+
+        // Convert to 3D lines using Line2 for proper thickness
+        const useTerrain = CONFIG.contours.colorMode === 'terrain';
+        const solidColor = new THREE.Color(CONFIG.contours.color);
+        const yOffset = 0.02; // Small offset to prevent z-fighting
+        const lineWidth = CONFIG.contours.lineWidth;
+
+        contours.forEach((contour, index) => {
+
+          // Process each ring in the MultiPolygon
+          contour.coordinates.forEach(polygon => {
+            polygon.forEach(ring => {
+              if (ring.length < 2) return;
+
+              // Helper to check if a point is within clipping bounds
+              const isInBounds = (worldX, worldZ) => {
+                return worldX >= clipBounds.west && worldX <= clipBounds.east &&
+                       worldZ >= clipBounds.south && worldZ <= clipBounds.north;
+              };
+
+              // Segment the ring into continuous line segments that are within bounds
+              const lineSegments = [];
+              let currentSegment = { positions: [], colors: [] };
+
+              ring.forEach(([gx, gz]) => {
+                // Convert grid coords to world coords
+                const worldX = (gx / segments - 0.5) * this.heightmap.size;
+                const worldZ = (gz / segments - 0.5) * this.heightmap.size;
+
+                if (isInBounds(worldX, worldZ)) {
+                  // Point is inside bounds - add to current segment
+                  const y = this.heightmap.sampleHeight(worldX, worldZ) + yOffset;
+                  currentSegment.positions.push(worldX, y, worldZ);
+
+                  if (useTerrain) {
+                    const col = this.colorPlane.sampleColor(worldX, worldZ);
+                    currentSegment.colors.push(col.r, col.g, col.b);
+                  }
+                } else {
+                  // Point is outside bounds - end current segment if it has points
+                  if (currentSegment.positions.length >= 6) {
+                    lineSegments.push(currentSegment);
+                    currentSegment = { positions: [], colors: [] };
+                  } else {
+                    // Discard incomplete segment
+                    currentSegment = { positions: [], colors: [] };
+                  }
+                }
+              });
+
+              // Add final segment if valid
+              if (currentSegment.positions.length >= 6) {
+                lineSegments.push(currentSegment);
+              }
+
+              // Create line geometry for each segment
+              lineSegments.forEach(segment => {
+                const geometry = new LineGeometry();
+                geometry.setPositions(segment.positions);
+
+                let material;
+                if (useTerrain) {
+                  geometry.setColors(segment.colors);
+                  material = new LineMaterial({
+                    vertexColors: true,
+                    opacity: CONFIG.contours.opacity,
+                    transparent: true,
+                    linewidth: lineWidth,
+                    alphaToCoverage: false
+                  });
+                } else {
+                  material = new LineMaterial({
+                    color: solidColor,
+                    opacity: CONFIG.contours.opacity,
+                    transparent: true,
+                    linewidth: lineWidth,
+                    alphaToCoverage: false
+                  });
+                }
+                material.resolution.copy(resolution);
+
+                const line = new Line2(geometry, material);
+                line.computeLineDistances();
+                this.group.add(line);
+              });
+            });
+          });
+        });
+
+        // Generate boundary lines along clipped edges
+        this.generateBoundaryLines(clipBounds, yOffset, useTerrain, solidColor, resolution, lineWidth);
+      }
+
+      generateBoundaryLines(clipBounds, yOffset, useTerrain, solidColor, resolution, lineWidth) {
+        const { clipNorth, clipEast, clipSouth, clipWest } = CONFIG.terrain;
+        const size = this.heightmap.size;
+        const segments = this.heightmap.segments;
+        const numSamples = Math.min(segments, 256); // Sample points along each edge
+
+        // Helper to create a boundary line
+        const createBoundaryLine = (samples) => {
+          if (samples.length < 2) return;
+
+          const positions = [];
+          const colors = [];
+
+          samples.forEach(([x, z]) => {
+            const y = this.heightmap.sampleHeight(x, z) + yOffset;
+            positions.push(x, y, z);
+
+            if (useTerrain) {
+              const col = this.colorPlane.sampleColor(x, z);
+              colors.push(col.r, col.g, col.b);
+            }
+          });
+
+          const geometry = new LineGeometry();
+          geometry.setPositions(positions);
+
+          let material;
+          if (useTerrain) {
+            geometry.setColors(colors);
+            material = new LineMaterial({
+              vertexColors: true,
+              opacity: CONFIG.contours.opacity,
+              transparent: true,
+              linewidth: lineWidth * 1.5, // Slightly thicker for visibility
+              alphaToCoverage: false
+            });
+          } else {
+            material = new LineMaterial({
+              color: solidColor,
+              opacity: CONFIG.contours.opacity,
+              transparent: true,
+              linewidth: lineWidth * 1.5,
+              alphaToCoverage: false
+            });
+          }
+          material.resolution.copy(resolution);
+
+          const line = new Line2(geometry, material);
+          line.computeLineDistances();
+          this.group.add(line);
+        };
+
+        // North edge (positive z)
+        if (clipNorth > 0) {
+          const z = clipBounds.north;
+          const samples = [];
+          for (let i = 0; i <= numSamples; i++) {
+            const t = i / numSamples;
+            const x = clipBounds.west + t * (clipBounds.east - clipBounds.west);
+            samples.push([x, z]);
+          }
+          createBoundaryLine(samples);
+        }
+
+        // South edge (negative z)
+        if (clipSouth > 0) {
+          const z = clipBounds.south;
+          const samples = [];
+          for (let i = 0; i <= numSamples; i++) {
+            const t = i / numSamples;
+            const x = clipBounds.west + t * (clipBounds.east - clipBounds.west);
+            samples.push([x, z]);
+          }
+          createBoundaryLine(samples);
+        }
+
+        // East edge (positive x)
+        if (clipEast > 0) {
+          const x = clipBounds.east;
+          const samples = [];
+          for (let i = 0; i <= numSamples; i++) {
+            const t = i / numSamples;
+            const z = clipBounds.south + t * (clipBounds.north - clipBounds.south);
+            samples.push([x, z]);
+          }
+          createBoundaryLine(samples);
+        }
+
+        // West edge (negative x)
+        if (clipWest > 0) {
+          const x = clipBounds.west;
+          const samples = [];
+          for (let i = 0; i <= numSamples; i++) {
+            const t = i / numSamples;
+            const z = clipBounds.south + t * (clipBounds.north - clipBounds.south);
+            samples.push([x, z]);
+          }
+          createBoundaryLine(samples);
+        }
+      }
+
+      update() {
+        this.generate();
+      }
+
+      setVisible(visible) {
+        this.group.visible = visible;
+      }
+    }
+
+    // ============================================
+    // TerrainMesh
+    // ============================================
+    class TerrainMesh {
+      constructor(heightmap, colorPlane) {
+        this.heightmap = heightmap;
+        this.colorPlane = colorPlane;
+        this.mesh = null;
+        this.geometry = null;
+        this.material = null;
+        this.points = null;
+        this.pointsGeometry = null;
+        this.pointsMaterial = null;
+      }
+
+      create() {
+        const { size, segments } = this.heightmap;
+
+        // Create geometry
+        this.geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+        this.geometry.rotateX(-Math.PI / 2);
+
+        // Apply heights
+        this.updateGeometry();
+
+        // Create shader material with all color mode support
+        this.material = new THREE.ShaderMaterial({
+          uniforms: {
+            colorMap: { value: this.colorPlane.getTexture() },
+            reliefShading: { value: CONFIG.surface.reliefShading ? 1.0 : 0.0 },
+            lightDir: { value: new THREE.Vector3(-1, 1, -1).normalize() },
+            opacity: { value: CONFIG.surface.opacity },
+            // Color mode: 0=height, 1=slope, 2=iridescent, 3=liquidMetal
+            colorMode: { value: { 'height': 0, 'slope': 1, 'iridescent': 2 }[CONFIG.color.mode] || 0 },
+            u_time: { value: 0.0 },
+            // Height range for normalization
+            minHeight: { value: this.heightmap.minHeight },
+            maxHeight: { value: this.heightmap.maxHeight },
+            // Iridescent params
+            iridSpeed: { value: CONFIG.color.iridescent.speed },
+            iridScale: { value: CONFIG.color.iridescent.scale },
+            iridIntensity: { value: CONFIG.color.iridescent.intensity },
+            iridBaseHue: { value: CONFIG.color.iridescent.baseHue },
+            // Clipping params
+            clipNorth: { value: CONFIG.terrain.clipNorth },
+            clipEast: { value: CONFIG.terrain.clipEast },
+            clipSouth: { value: CONFIG.terrain.clipSouth },
+            clipWest: { value: CONFIG.terrain.clipWest },
+            terrainSize: { value: CONFIG.terrain.size }
+          },
+          vertexShader: `
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            varying float vHeight;
+
+            uniform float minHeight;
+            uniform float maxHeight;
+
+            void main() {
+              vUv = uv;
+              vNormal = normalize(normalMatrix * normal);
+              vPosition = position;
+              // Normalize height to 0-1 range
+              vHeight = (position.y - minHeight) / (maxHeight - minHeight + 0.001);
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: `
+            uniform sampler2D colorMap;
+            uniform float reliefShading;
+            uniform vec3 lightDir;
+            uniform float opacity;
+            uniform int colorMode;
+            uniform float u_time;
+
+            // Iridescent uniforms
+            uniform float iridSpeed;
+            uniform float iridScale;
+            uniform float iridIntensity;
+            uniform float iridBaseHue;
+
+            // Clipping uniforms
+            uniform float clipNorth;
+            uniform float clipEast;
+            uniform float clipSouth;
+            uniform float clipWest;
+            uniform float terrainSize;
+
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            varying float vHeight;
+
+            // HSV to RGB conversion
+            vec3 hsv2rgb(vec3 c) {
+              vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+              vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+              return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+            }
+
+            // Simplex noise functions
+            vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec3 permute(vec3 x) { return mod289(((x * 34.0) + 1.0) * x); }
+
+            float snoise(vec2 v) {
+              const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                                 -0.577350269189626, 0.024390243902439);
+              vec2 i  = floor(v + dot(v, C.yy));
+              vec2 x0 = v - i + dot(i, C.xx);
+              vec2 i1;
+              i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+              vec4 x12 = x0.xyxy + C.xxzz;
+              x12.xy -= i1;
+              i = mod289(i);
+              vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
+                             + i.x + vec3(0.0, i1.x, 1.0));
+              vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy),
+                                      dot(x12.zw, x12.zw)), 0.0);
+              m = m * m;
+              m = m * m;
+              vec3 x = 2.0 * fract(p * C.www) - 1.0;
+              vec3 h = abs(x) - 0.5;
+              vec3 ox = floor(x + 0.5);
+              vec3 a0 = x - ox;
+              m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+              vec3 g;
+              g.x = a0.x * x0.x + h.x * x0.y;
+              g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+              return 130.0 * dot(m, g);
+            }
+
+            // Iridescent color mode
+            vec3 iridescent(vec2 uv, float height, float time) {
+              float angle = atan(uv.y - 0.5, uv.x - 0.5);
+              float dist = length(uv - 0.5);
+
+              // Phase based on height + position + time
+              float phase = height * iridScale + angle * 0.3 + dist * 2.0 + time * iridSpeed;
+
+              // Rainbow hue cycling
+              float hue = fract(phase + iridBaseHue);
+
+              return hsv2rgb(vec3(hue, iridIntensity, 0.9 + height * 0.1));
+            }
+
+            void main() {
+              // Clipping logic
+              float halfSize = terrainSize * 0.5;
+              if (vPosition.z > (halfSize - clipNorth * terrainSize)) discard;  // North (positive z)
+              if (vPosition.z < -(halfSize - clipSouth * terrainSize)) discard; // South (negative z)
+              if (vPosition.x > (halfSize - clipEast * terrainSize)) discard;   // East (positive x)
+              if (vPosition.x < -(halfSize - clipWest * terrainSize)) discard;  // West (negative x)
+
+              vec3 baseColor;
+
+              if (colorMode == 0 || colorMode == 1) {
+                // Height or Slope mode - use texture
+                vec4 texColor = texture2D(colorMap, vUv);
+                baseColor = texColor.rgb;
+              } else if (colorMode == 2) {
+                // Iridescent mode
+                baseColor = iridescent(vUv, vHeight, u_time);
+              } else {
+                baseColor = vec3(1.0, 0.0, 1.0); // Fallback magenta
+              }
+
+              // Relief shading (hillshade)
+              float ambient = 0.4;
+              float diffuse = max(dot(vNormal, lightDir), 0.0);
+              float shade = mix(1.0, ambient + (1.0 - ambient) * diffuse, reliefShading);
+
+              vec3 finalColor = baseColor * shade;
+
+              gl_FragColor = vec4(finalColor, opacity);
+            }
+          `,
+          transparent: true,
+          depthWrite: true,
+          side: THREE.DoubleSide
+        });
+
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
+
+        // Create point cloud for Point Grid mode
+        this.createPointCloud();
+
+        // Create group to hold both mesh and points
+        this.group = new THREE.Group();
+        this.group.add(this.mesh);
+        this.group.add(this.points);
+
+        // Initialize visibility based on current mode
+        const isPointGrid = CONFIG.surface.mode === 'pointGrid';
+        this.mesh.visible = !isPointGrid;
+        this.points.visible = isPointGrid;
+
+        return this.group;
+      }
+
+      createPointCloud(gridScale = CONFIG.surface.gridScale) {
+        // Dispose old geometry if exists
+        if (this.pointsGeometry) {
+          this.pointsGeometry.dispose();
+        }
+
+        const { size, segments } = this.heightmap;
+        const step = gridScale;
+        const positions = [];
+        const colors = [];
+
+        const halfSize = size / 2;
+        const segmentSize = size / segments;
+
+        // Calculate clipping boundaries
+        const clipBounds = {
+          north: halfSize - CONFIG.terrain.clipNorth * size,
+          south: -halfSize + CONFIG.terrain.clipSouth * size,
+          east: halfSize - CONFIG.terrain.clipEast * size,
+          west: -halfSize + CONFIG.terrain.clipWest * size
+        };
+
+        for (let z = 0; z <= segments; z += step) {
+          for (let x = 0; x <= segments; x += step) {
+            const worldX = -halfSize + x * segmentSize;
+            const worldZ = -halfSize + z * segmentSize;
+
+            // Check if point is within clipping bounds
+            if (worldX < clipBounds.west || worldX > clipBounds.east ||
+                worldZ < clipBounds.south || worldZ > clipBounds.north) {
+              continue; // Skip points outside bounds
+            }
+
+            const y = this.heightmap.sampleHeight(worldX, worldZ);
+
+            positions.push(worldX, y, worldZ);
+
+            // Sample color from color plane
+            const color = this.colorPlane.sampleColor(worldX, worldZ);
+            colors.push(color.r, color.g, color.b);
+          }
+        }
+
+        this.pointsGeometry = new THREE.BufferGeometry();
+        this.pointsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        this.pointsGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+        if (!this.pointsMaterial) {
+          this.pointsMaterial = new THREE.PointsMaterial({
+            size: CONFIG.surface.pointSize,
+            vertexColors: true,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: CONFIG.surface.opacity
+          });
+        }
+
+        if (!this.points) {
+          this.points = new THREE.Points(this.pointsGeometry, this.pointsMaterial);
+        } else {
+          this.points.geometry = this.pointsGeometry;
+        }
+      }
+
+      updateGeometry() {
+        const positions = this.geometry.attributes.position.array;
+        const segments = this.heightmap.segments;
+
+        for (let i = 0; i < positions.length; i += 3) {
+          const x = positions[i];
+          const z = positions[i + 2];
+          positions[i + 1] = this.heightmap.sampleHeight(x, z);
+        }
+
+        this.geometry.attributes.position.needsUpdate = true;
+        this.geometry.computeVertexNormals();
+      }
+
+      recreateGeometry() {
+        // Dispose old geometry
+        if (this.geometry) {
+          this.geometry.dispose();
+        }
+        if (this.pointsGeometry) {
+          this.pointsGeometry.dispose();
+        }
+
+        // Create new geometry with current heightmap dimensions
+        const { size, segments } = this.heightmap;
+        this.geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+        this.geometry.rotateX(-Math.PI / 2);
+
+        // Apply heights
+        this.updateGeometry();
+
+        // Update mesh geometry reference
+        if (this.mesh) {
+          this.mesh.geometry = this.geometry;
+        }
+
+        // Recreate point cloud geometry
+        this.pointsGeometry = null;
+        this.updatePointCloud();
+      }
+
+      updateFromHeightmap() {
+        this.updateGeometry();
+      }
+
+      updateFromColorPlane() {
+        if (this.material) {
+          this.material.uniforms.colorMap.value = this.colorPlane.getTexture();
+        }
+      }
+
+      setWireframe(enabled) {
+        if (this.material) {
+          this.material.wireframe = enabled;
+        }
+      }
+
+      setBackgroundMode(enabled, backgroundColor) {
+        if (!this.mesh) return;
+
+        if (enabled) {
+          // Create or update simple solid-color material
+          if (!this.backgroundMaterial) {
+            this.backgroundMaterial = new THREE.MeshBasicMaterial({
+              color: new THREE.Color(backgroundColor),
+              side: THREE.DoubleSide,
+              depthWrite: true,
+              depthTest: true
+            });
+          } else {
+            this.backgroundMaterial.color.set(backgroundColor);
+          }
+          this.mesh.material = this.backgroundMaterial;
+        } else {
+          // Restore original shader material
+          this.mesh.material = this.material;
+        }
+      }
+
+      updateBackgroundColor(color) {
+        if (this.backgroundMaterial) {
+          this.backgroundMaterial.color.set(color);
+        }
+      }
+
+      setReliefShading(enabled) {
+        if (this.material) {
+          this.material.uniforms.reliefShading.value = enabled ? 1.0 : 0.0;
+        }
+      }
+
+      setOpacity(opacity) {
+        if (this.material) {
+          this.material.uniforms.opacity.value = opacity;
+        }
+      }
+
+      setClipping(north, east, south, west) {
+        if (this.material) {
+          this.material.uniforms.clipNorth.value = north;
+          this.material.uniforms.clipEast.value = east;
+          this.material.uniforms.clipSouth.value = south;
+          this.material.uniforms.clipWest.value = west;
+        }
+      }
+
+      setVisible(visible) {
+        if (this.group) {
+          this.group.visible = visible;
+        }
+      }
+
+      setPointGrid(enabled) {
+        if (this.points && this.mesh) {
+          this.points.visible = enabled;
+          this.mesh.visible = !enabled;
+        }
+      }
+
+      setPointSize(size) {
+        if (this.pointsMaterial) {
+          this.pointsMaterial.size = size;
+        }
+      }
+
+      setGridScale(scale) {
+        this.createPointCloud(scale);
+      }
+
+      updatePointCloud() {
+        this.createPointCloud(CONFIG.surface.gridScale);
+      }
+    }
+
+    // ============================================
+    // MetallicSurface - Standalone metallic/iridescent surface layer
+    // ============================================
+    class MetallicSurface {
+      constructor(geometry, heightmap) {
+        this.geometry = geometry;
+        this.heightmap = heightmap;
+
+        // Create material with simple metallic shader
+        this.material = new THREE.ShaderMaterial({
+          uniforms: {
+            lightDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
+            u_cameraPos: { value: new THREE.Vector3() },
+            baseColor: { value: new THREE.Color(0.92, 0.95, 1.0) }, // Bright icy blue crystal
+            baseBrightness: { value: CONFIG.surface.metallic.baseBrightness },
+            shadowLift: { value: CONFIG.surface.metallic.shadowLift },
+            shininess: { value: CONFIG.surface.metallic.shininess },
+            edgeSharpness: { value: CONFIG.surface.metallic.edgeSharpness },
+            edgeBrightness: { value: CONFIG.surface.metallic.edgeBrightness },
+            iridescence: { value: CONFIG.surface.metallic.iridescence },
+            opacity: { value: CONFIG.surface.metallic.opacity },
+            // Clipping params
+            clipNorth: { value: CONFIG.terrain.clipNorth },
+            clipEast: { value: CONFIG.terrain.clipEast },
+            clipSouth: { value: CONFIG.terrain.clipSouth },
+            clipWest: { value: CONFIG.terrain.clipWest },
+            terrainSize: { value: CONFIG.terrain.size }
+          },
+          vertexShader: `
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+
+            void main() {
+              vNormal = normalize(normalMatrix * normal);
+              vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: `
+            uniform vec3 lightDir;
+            uniform vec3 u_cameraPos;
+            uniform vec3 baseColor;
+            uniform float baseBrightness;
+            uniform float shadowLift;
+            uniform float shininess;
+            uniform float edgeSharpness;
+            uniform float edgeBrightness;
+            uniform float iridescence;
+            uniform float opacity;
+
+            // Clipping uniforms
+            uniform float clipNorth;
+            uniform float clipEast;
+            uniform float clipSouth;
+            uniform float clipWest;
+            uniform float terrainSize;
+
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+
+            // HSV to RGB conversion
+            vec3 hsv2rgb(vec3 c) {
+              vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+              vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+              return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+            }
+
+            // Fresnel effect
+            float fresnel(vec3 viewDir, vec3 normal) {
+              float cosTheta = max(dot(viewDir, normal), 0.0);
+              float f0 = 0.04;
+              return f0 + (1.0 - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+            }
+
+            // Specular highlight (Blinn-Phong)
+            float specular(vec3 viewDir, vec3 normal, vec3 lightDir, float roughness) {
+              vec3 halfDir = normalize(viewDir + lightDir);
+              float NdotH = max(dot(normal, halfDir), 0.0);
+              float exponent = max((1.0 - roughness) * 128.0, 1.0);
+              return pow(NdotH, exponent);
+            }
+
+            // Iridescence shimmer
+            vec3 iridescenceShimmer(vec3 viewDir, vec3 normal) {
+              float angle = acos(clamp(dot(viewDir, normal), 0.0, 1.0));
+              float hue = fract(angle * 2.5);
+              return hsv2rgb(vec3(hue, 0.8, 1.0));
+            }
+
+            void main() {
+              // Clipping logic
+              float halfSize = terrainSize * 0.5;
+              if (vPosition.z > (halfSize - clipNorth * terrainSize)) discard;  // North (positive z)
+              if (vPosition.z < -(halfSize - clipSouth * terrainSize)) discard; // South (negative z)
+              if (vPosition.x > (halfSize - clipEast * terrainSize)) discard;   // East (positive x)
+              if (vPosition.x < -(halfSize - clipWest * terrainSize)) discard;  // West (negative x)
+
+              vec3 normal = normalize(vNormal);
+              vec3 viewDir = normalize(u_cameraPos - vPosition);
+
+              // Base terrain color with controllable brightness
+              float diffuse = max(dot(normal, lightDir), 0.0);
+              vec3 terrainColor = vec3(baseBrightness) * (shadowLift + (1.0 - shadowLift) * diffuse);
+
+              // Metallic crystal color
+              vec3 crystalColor = baseColor * (0.5 + 0.5 * diffuse);
+
+              // Sharp specular highlight controlled by shininess
+              vec3 halfDir = normalize(viewDir + lightDir);
+              float NdotH = max(dot(normal, halfDir), 0.0);
+              float specExponent = shininess * 50.0;
+              float spec = pow(NdotH, specExponent);
+              vec3 specularColor = vec3(spec) * 2.0;
+
+              // Edge detection using view angle
+              float viewDot = abs(dot(viewDir, normal));
+              float edgeFactor = pow(1.0 - viewDot, edgeSharpness);
+
+              // Crystal edges glow
+              vec3 edgeGlow = vec3(1.0, 1.0, 1.0) * edgeFactor * edgeBrightness;
+
+              // Fresnel rim
+              float rim = fresnel(viewDir, normal);
+
+              // Iridescent shimmer on edges
+              vec3 iridColor = iridescenceShimmer(viewDir, normal);
+              vec3 iridContribution = iridColor * iridescence * rim * edgeFactor;
+
+              // Combine metallic effects
+              vec3 metallicEffects = crystalColor + specularColor + edgeGlow + iridContribution;
+
+              // Blend between terrain and metallic based on opacity
+              vec3 finalColor = mix(terrainColor, metallicEffects, opacity);
+
+              gl_FragColor = vec4(finalColor, 1.0);
+            }
+          `,
+          transparent: false,  // Always opaque for proper depth writing
+          side: THREE.DoubleSide,
+          depthWrite: true,
+          depthTest: true
+        });
+
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
+        this.mesh.visible = CONFIG.surface.metallicShading;
+
+        // Position at same level as matt surface (contours render above both)
+        this.mesh.position.y = 0.01;
+
+        // Ensure it renders after the terrain
+        this.mesh.renderOrder = 999;
+
+        // Disable frustum culling
+        this.mesh.frustumCulled = false;
+      }
+
+      setVisibility(visible) {
+        this.mesh.visible = visible;
+      }
+
+      updateCamera(camera) {
+        this.material.uniforms.u_cameraPos.value.copy(camera.position);
+      }
+
+      setShininess(value) {
+        this.material.uniforms.shininess.value = value;
+      }
+
+      setEdgeSharpness(value) {
+        this.material.uniforms.edgeSharpness.value = value;
+      }
+
+      setEdgeBrightness(value) {
+        this.material.uniforms.edgeBrightness.value = value;
+      }
+
+      setIridescence(value) {
+        this.material.uniforms.iridescence.value = value;
+      }
+
+      setOpacity(value) {
+        this.material.uniforms.opacity.value = value;
+      }
+
+      setBaseBrightness(value) {
+        this.material.uniforms.baseBrightness.value = value;
+      }
+
+      setShadowLift(value) {
+        this.material.uniforms.shadowLift.value = value;
+      }
+
+      setClipping(north, east, south, west) {
+        this.material.uniforms.clipNorth.value = north;
+        this.material.uniforms.clipEast.value = east;
+        this.material.uniforms.clipSouth.value = south;
+        this.material.uniforms.clipWest.value = west;
+      }
+    }
+
+    // ============================================
+    // CameraController
+    // ============================================
+    class CameraController {
+      constructor(renderer, config) {
+        this.config = config;
+        this.renderer = renderer;
+
+        const aspect = window.innerWidth / window.innerHeight;
+
+        // Perspective camera
+        this.perspectiveCamera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
+        this.perspectiveCamera.position.set(20, 20, 20);
+
+        // Orthographic camera (for isometric)
+        const frustumSize = 25;
+        this.orthographicCamera = new THREE.OrthographicCamera(
+          -frustumSize * aspect / 2,
+          frustumSize * aspect / 2,
+          frustumSize / 2,
+          -frustumSize / 2,
+          0.1,
+          1000
+        );
+
+        // Set isometric position (true isometric angle)
+        const d = 30;
+        this.orthographicCamera.position.set(d, d, d);
+        this.orthographicCamera.lookAt(0, 0, 0);
+
+        // Start with orthographic
+        this.activeCamera = this.orthographicCamera;
+
+        // OrbitControls
+        this.controls = new OrbitControls(this.activeCamera, renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.target.set(0, 0, 0);
+
+        // Limit rotation in isometric mode
+        this.setMode(config.mode);
+      }
+
+      setMode(mode) {
+        this.config.mode = mode;
+
+        if (mode === 'isometric') {
+          this.activeCamera = this.orthographicCamera;
+          this.controls.object = this.orthographicCamera;
+
+          // Reset position for isometric view
+          const d = 30;
+          this.orthographicCamera.position.set(d, d, d);
+          this.orthographicCamera.lookAt(0, 0, 0);
+
+          // Enable rotation (same as perspective)
+          this.controls.enableRotate = true;
+          this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
+        } else {
+          this.activeCamera = this.perspectiveCamera;
+          this.controls.object = this.perspectiveCamera;
+
+          // Enable full rotation for perspective
+          this.controls.enableRotate = true;
+          this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
+        }
+
+        this.controls.update();
+      }
+
+      getActiveCamera() {
+        return this.activeCamera;
+      }
+
+      setAutoRotate(enabled) {
+        this.controls.autoRotate = enabled;
+      }
+
+      setRotateSpeed(speed) {
+        this.controls.autoRotateSpeed = speed;
+      }
+
+      update(delta) {
+        if (this.config.autoPan) {
+          const speed = this.config.panSpeed;
+          this.controls.target.x += speed * this.config.panDirection.x * delta;
+          this.controls.target.z += speed * this.config.panDirection.z * delta;
+
+          this.activeCamera.position.x += speed * this.config.panDirection.x * delta;
+          this.activeCamera.position.z += speed * this.config.panDirection.z * delta;
+        }
+
+        this.controls.update();
+      }
+
+      onResize(width, height) {
+        const aspect = width / height;
+
+        this.perspectiveCamera.aspect = aspect;
+        this.perspectiveCamera.updateProjectionMatrix();
+
+        const frustumSize = 25;
+        this.orthographicCamera.left = -frustumSize * aspect / 2;
+        this.orthographicCamera.right = frustumSize * aspect / 2;
+        this.orthographicCamera.top = frustumSize / 2;
+        this.orthographicCamera.bottom = -frustumSize / 2;
+        this.orthographicCamera.updateProjectionMatrix();
+      }
+    }
+
+    // ============================================
+    // LandscapeVisualizer
+    // ============================================
+    class LandscapeVisualizer {
+      constructor() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(CONFIG.scene.backgroundColor);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.clock = new THREE.Clock();
+
+        this.heightmap = null;
+        this.colorPlane = null;
+        this.contourLayer = null;
+        this.terrainMesh = null;
+        this.cameraController = null;
+      }
+
+      init() {
+        // Setup renderer
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+
+        // Setup camera
+        this.cameraController = new CameraController(this.renderer, CONFIG.camera);
+
+        // Create heightmap
+        this.heightmap = new Heightmap(CONFIG.terrain.size, CONFIG.terrain.segments);
+        if (CONFIG.terrain.mode === 'sculpted') {
+          this.heightmap.generateSculpted(CONFIG.terrain.sculpted);
+        } else {
+          this.heightmap.generate(CONFIG.terrain);
+        }
+        this.heightmap.applyLevels(CONFIG.terrain.levelFloor, CONFIG.terrain.levelCeiling);
+
+        // Create color plane
+        this.colorPlane = new ColorPlane(this.heightmap);
+        this.colorPlane.generate();
+
+        // Create terrain mesh
+        this.terrainMesh = new TerrainMesh(this.heightmap, this.colorPlane);
+        const mesh = this.terrainMesh.create();
+        this.scene.add(mesh);
+
+        // Create metallic surface (standalone layer)
+        this.metallicSurface = new MetallicSurface(this.terrainMesh.geometry, this.heightmap);
+        this.scene.add(this.metallicSurface.mesh);
+
+        // Create contour layer
+        this.contourLayer = new ContourLayer(this.heightmap, this.colorPlane, this.scene, this.renderer);
+        this.contourLayer.generate();
+
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        this.scene.add(ambientLight);
+
+        // Setup controls
+        this.setupControls();
+
+        // Handle resize
+        window.addEventListener('resize', () => this.onResize());
+
+        // Start animation
+        this.animate();
+      }
+
+      regenerateTerrain() {
+        if (CONFIG.terrain.mode === 'image' && CONFIG.terrain.imageData) {
+          this.heightmap.loadFromImage(CONFIG.terrain.imageData, CONFIG.terrain.imageHeightScale);
+        } else if (CONFIG.terrain.mode === 'sculpted') {
+          this.heightmap.generateSculpted(CONFIG.terrain.sculpted);
+        } else {
+          this.heightmap.generate(CONFIG.terrain);
+        }
+
+        // Apply post-processing levels (floor/ceiling)
+        this.heightmap.applyLevels(CONFIG.terrain.levelFloor, CONFIG.terrain.levelCeiling);
+
+        this.colorPlane.generate();
+        this.terrainMesh.updateFromHeightmap();
+        this.terrainMesh.updateFromColorPlane();
+        this.terrainMesh.updatePointCloud();
+        this.contourLayer.update();
+      }
+
+      recreateWithResolution() {
+        // Update segments based on highRes toggle
+        CONFIG.terrain.segments = CONFIG.terrain.highRes ? 512 : 256;
+
+        // Create new heightmap with new resolution
+        this.heightmap = new Heightmap(CONFIG.terrain.size, CONFIG.terrain.segments);
+
+        // Generate terrain data
+        if (CONFIG.terrain.mode === 'image' && CONFIG.terrain.imageData) {
+          this.heightmap.loadFromImage(CONFIG.terrain.imageData, CONFIG.terrain.imageHeightScale);
+        } else if (CONFIG.terrain.mode === 'sculpted') {
+          this.heightmap.generateSculpted(CONFIG.terrain.sculpted);
+        } else {
+          this.heightmap.generate(CONFIG.terrain);
+        }
+        this.heightmap.applyLevels(CONFIG.terrain.levelFloor, CONFIG.terrain.levelCeiling);
+
+        // Update colorPlane with new heightmap
+        this.colorPlane.heightmap = this.heightmap;
+        this.colorPlane.generate();
+
+        // Update terrainMesh with new heightmap and recreate geometry
+        this.terrainMesh.heightmap = this.heightmap;
+        this.terrainMesh.recreateGeometry();
+        this.terrainMesh.updateFromColorPlane();
+
+        // Update metallicSurface with new geometry
+        this.metallicSurface.geometry = this.terrainMesh.geometry;
+        this.metallicSurface.mesh.geometry = this.terrainMesh.geometry;
+
+        // Update contourLayer with new heightmap
+        this.contourLayer.heightmap = this.heightmap;
+        this.contourLayer.update();
+      }
+
+      setupControls() {
+        // Panel minimize/expand toggle
+        const controls = document.getElementById('controls');
+        const minimizeBtn = document.getElementById('minimize-btn');
+        const settingsCog = document.getElementById('settings-cog');
+
+        minimizeBtn.addEventListener('click', () => {
+          controls.classList.add('minimized');
+          settingsCog.classList.add('visible');
+        });
+
+        settingsCog.addEventListener('click', () => {
+          controls.classList.remove('minimized');
+          settingsCog.classList.remove('visible');
+        });
+
+        // Clipboard paste for heightmap
+        document.addEventListener('paste', (e) => {
+          const items = e.clipboardData?.items;
+          if (!items) return;
+
+          for (const item of items) {
+            if (item.type.startsWith('image/')) {
+              e.preventDefault();
+              const blob = item.getAsFile();
+
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(img, 0, 0);
+
+                  CONFIG.terrain.imageData = ctx.getImageData(0, 0, img.width, img.height);
+                  CONFIG.terrain.mode = 'image';
+
+                  // Update UI to reflect mode change
+                  document.getElementById('terrainMode').value = 'image';
+                  document.getElementById('simplex-controls').classList.add('hidden');
+                  document.getElementById('sculpted-controls').classList.add('hidden');
+                  document.getElementById('image-controls').classList.remove('hidden');
+
+                  this.regenerateTerrain();
+                };
+                img.src = event.target.result;
+              };
+              reader.readAsDataURL(blob);
+              break;
+            }
+          }
+        });
+
+        // Drag and drop handling (extensible for future file types)
+        const dropOverlay = document.getElementById('drop-overlay');
+        const infoDiv = document.getElementById('info');
+        const defaultInfoText = infoDiv.textContent;
+        let dragCounter = 0;
+
+        const getDropHint = (dataTransfer) => {
+          // Check file types and return appropriate hint
+          const items = dataTransfer.items;
+          for (const item of items) {
+            if (item.type.startsWith('image/')) {
+              return 'Drop image to use as heightmap';
+            }
+          }
+          // Future: add more file type hints here
+          return null;
+        };
+
+        const handleDroppedFile = (file) => {
+          // Handle different file types (extensible)
+          if (file.type.startsWith('image/')) {
+            // Load as heightmap
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const img = new Image();
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+
+                CONFIG.terrain.imageData = ctx.getImageData(0, 0, img.width, img.height);
+                CONFIG.terrain.mode = 'image';
+
+                document.getElementById('terrainMode').value = 'image';
+                document.getElementById('simplex-controls').classList.add('hidden');
+                document.getElementById('sculpted-controls').classList.add('hidden');
+                document.getElementById('image-controls').classList.remove('hidden');
+
+                this.regenerateTerrain();
+              };
+              img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+          }
+          // Future: add more file type handlers here
+        };
+
+        document.addEventListener('dragenter', (e) => {
+          e.preventDefault();
+          dragCounter++;
+          const hint = getDropHint(e.dataTransfer);
+          if (hint) {
+            dropOverlay.classList.add('active');
+            infoDiv.classList.add('drop-hint');
+            infoDiv.textContent = hint;
+          }
+        });
+
+        document.addEventListener('dragover', (e) => {
+          e.preventDefault();
+        });
+
+        document.addEventListener('dragleave', (e) => {
+          e.preventDefault();
+          dragCounter--;
+          if (dragCounter === 0) {
+            dropOverlay.classList.remove('active');
+            infoDiv.classList.remove('drop-hint');
+            infoDiv.textContent = defaultInfoText;
+          }
+        });
+
+        document.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dragCounter = 0;
+          dropOverlay.classList.remove('active');
+          infoDiv.classList.remove('drop-hint');
+          infoDiv.textContent = defaultInfoText;
+
+          const files = e.dataTransfer.files;
+          if (files.length > 0) {
+            handleDroppedFile(files[0]);
+          }
+        });
+
+        // Helper to bind slider with display and change handler
+        const bindSlider = (id, configPath, onChangeCallback) => {
+          const slider = document.getElementById(id);
+          const valueDisplay = document.getElementById(`${id}-value`);
+
+          slider.addEventListener('input', () => {
+            if (valueDisplay) {
+              valueDisplay.textContent = parseFloat(slider.value).toFixed(2);
+            }
+          });
+
+          slider.addEventListener('change', () => {
+            const keys = configPath.split('.');
+            let obj = CONFIG;
+            for (let i = 0; i < keys.length - 1; i++) {
+              obj = obj[keys[i]];
+            }
+            obj[keys[keys.length - 1]] = parseFloat(slider.value);
+            if (onChangeCallback) onChangeCallback();
+          });
+        };
+
+        // Terrain controls
+        document.getElementById('seed').addEventListener('change', (e) => {
+          CONFIG.terrain.seed = parseInt(e.target.value);
+          this.regenerateTerrain();
+        });
+
+        document.getElementById('randomize-seed').addEventListener('click', () => {
+          const newSeed = Math.floor(Math.random() * 999999);
+          document.getElementById('seed').value = newSeed;
+          CONFIG.terrain.seed = newSeed;
+          this.regenerateTerrain();
+        });
+
+        bindSlider('heightScale', 'terrain.heightScale', () => this.regenerateTerrain());
+        bindSlider('noiseScale', 'terrain.noiseScale', () => this.regenerateTerrain());
+        bindSlider('octaves', 'terrain.octaves', () => this.regenerateTerrain());
+        bindSlider('persistence', 'terrain.persistence', () => this.regenerateTerrain());
+        bindSlider('lacunarity', 'terrain.lacunarity', () => this.regenerateTerrain());
+
+        // Sculpted terrain controls
+        document.getElementById('sculpted-seed').addEventListener('change', (e) => {
+          CONFIG.terrain.sculpted.seed = parseInt(e.target.value);
+          if (CONFIG.terrain.mode === 'sculpted') this.regenerateTerrain();
+        });
+
+        document.getElementById('sculpted-randomize-seed').addEventListener('click', () => {
+          const newSeed = Math.floor(Math.random() * 999999);
+          document.getElementById('sculpted-seed').value = newSeed;
+          CONFIG.terrain.sculpted.seed = newSeed;
+          if (CONFIG.terrain.mode === 'sculpted') this.regenerateTerrain();
+        });
+
+        const bindSculptedSlider = (id, configKey) => {
+          const slider = document.getElementById(id);
+          const valueDisplay = document.getElementById(id + '-value');
+
+          const updateValue = () => {
+            valueDisplay.textContent = parseFloat(slider.value).toFixed(2);
+            CONFIG.terrain.sculpted[configKey] = parseFloat(slider.value);
+            if (CONFIG.terrain.mode === 'sculpted') this.regenerateTerrain();
+          };
+
+          slider.addEventListener('input', updateValue);
+        };
+
+        bindSculptedSlider('sculptedHeightScale', 'heightScale');
+        bindSculptedSlider('macroScale', 'macroScale');
+        bindSculptedSlider('macroStrength', 'macroStrength');
+        bindSculptedSlider('warpStrength', 'warpStrength');
+        bindSculptedSlider('ridgeMix', 'ridgeMix');
+        bindSculptedSlider('valleyBias', 'valleyBias');
+        bindSculptedSlider('detailScale', 'detailScale');
+        bindSculptedSlider('detailStrength', 'detailStrength');
+        bindSculptedSlider('roughness', 'roughness');
+
+        // Post-processing levels (floor/ceiling)
+        const bindLevelSlider = (id, configKey) => {
+          const slider = document.getElementById(id);
+          const valueDisplay = document.getElementById(id + '-value');
+
+          slider.addEventListener('input', () => {
+            valueDisplay.textContent = parseFloat(slider.value).toFixed(2);
+            CONFIG.terrain[configKey] = parseFloat(slider.value);
+            this.regenerateTerrain();
+          });
+        };
+
+        bindLevelSlider('levelFloor', 'levelFloor');
+        bindLevelSlider('levelCeiling', 'levelCeiling');
+
+        // Clipping sliders
+        const bindClippingSlider = (id, configKey) => {
+          const slider = document.getElementById(id);
+          const valueDisplay = document.getElementById(id + '-value');
+
+          slider.addEventListener('input', () => {
+            const value = parseFloat(slider.value);
+            valueDisplay.textContent = value.toFixed(2);
+            CONFIG.terrain[configKey] = value;
+
+            // Update both terrain and metallic surface shaders
+            this.terrainMesh.setClipping(
+              CONFIG.terrain.clipNorth,
+              CONFIG.terrain.clipEast,
+              CONFIG.terrain.clipSouth,
+              CONFIG.terrain.clipWest
+            );
+            this.metallicSurface.setClipping(
+              CONFIG.terrain.clipNorth,
+              CONFIG.terrain.clipEast,
+              CONFIG.terrain.clipSouth,
+              CONFIG.terrain.clipWest
+            );
+
+            // Regenerate contours to update clipping and boundary lines
+            this.contourLayer.generate();
+
+            // Recreate point cloud if in point grid mode
+            if (CONFIG.surface.mode === 'pointGrid') {
+              this.terrainMesh.createPointCloud(CONFIG.surface.gridScale);
+            }
+          });
+        };
+
+        bindClippingSlider('clipNorth', 'clipNorth');
+        bindClippingSlider('clipEast', 'clipEast');
+        bindClippingSlider('clipSouth', 'clipSouth');
+        bindClippingSlider('clipWest', 'clipWest');
+
+        // Terrain mode toggle
+        document.getElementById('terrainMode').addEventListener('change', (e) => {
+          CONFIG.terrain.mode = e.target.value;
+
+          const simplexControls = document.getElementById('simplex-controls');
+          const sculptedControls = document.getElementById('sculpted-controls');
+          const imageControls = document.getElementById('image-controls');
+
+          // Hide all controls first
+          simplexControls.classList.add('hidden');
+          sculptedControls.classList.add('hidden');
+          imageControls.classList.add('hidden');
+
+          if (e.target.value === 'simplex') {
+            simplexControls.classList.remove('hidden');
+            this.regenerateTerrain();
+          } else if (e.target.value === 'sculpted') {
+            sculptedControls.classList.remove('hidden');
+            this.regenerateTerrain();
+          } else {
+            imageControls.classList.remove('hidden');
+            if (CONFIG.terrain.imageData) {
+              this.regenerateTerrain();
+            }
+          }
+        });
+
+        // High-res toggle
+        document.getElementById('highRes').addEventListener('change', (e) => {
+          CONFIG.terrain.highRes = e.target.checked;
+          this.recreateWithResolution();
+        });
+
+        // Image heightmap file upload
+        document.getElementById('heightmapFile').addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+
+              CONFIG.terrain.imageData = ctx.getImageData(0, 0, img.width, img.height);
+              this.regenerateTerrain();
+            };
+            img.src = event.target.result;
+          };
+          reader.readAsDataURL(file);
+        });
+
+        // Image height scale slider
+        bindSlider('imageHeightScale', 'terrain.imageHeightScale', () => {
+          if (CONFIG.terrain.mode === 'image' && CONFIG.terrain.imageData) {
+            this.regenerateTerrain();
+          }
+        });
+
+        // Color controls
+        document.getElementById('colorMode').addEventListener('change', (e) => {
+          CONFIG.color.mode = e.target.value;
+
+          // Show/hide appropriate control groups
+          const heightControls = document.getElementById('height-color-controls');
+          const slopeControls = document.getElementById('slope-controls');
+          const iridControls = document.getElementById('iridescent-controls');
+
+          heightControls.classList.toggle('hidden', e.target.value !== 'height');
+          slopeControls.classList.toggle('hidden', e.target.value !== 'slope');
+          iridControls.classList.toggle('hidden', e.target.value !== 'iridescent');
+
+          // Set shader colorMode uniform: 0=height, 1=slope, 2=iridescent
+          const modeMap = { 'height': 0, 'slope': 1, 'iridescent': 2 };
+          if (this.terrainMesh && this.terrainMesh.material) {
+            this.terrainMesh.material.uniforms.colorMode.value = modeMap[e.target.value];
+          }
+
+          // Update color plane for texture-based modes
+          if (e.target.value === 'height' || e.target.value === 'slope') {
+            this.colorPlane.setMode(e.target.value);
+            this.terrainMesh.updateFromColorPlane();
+          }
+
+          // Update contours and point cloud (they use static color sampling)
+          this.contourLayer.update();
+          this.terrainMesh.updatePointCloud();
+        });
+
+        ['lowColor', 'midColor', 'highColor'].forEach(id => {
+          document.getElementById(id).addEventListener('change', (e) => {
+            CONFIG.color[id] = e.target.value;
+            this.colorPlane.generate();
+            this.terrainMesh.updateFromColorPlane();
+            this.terrainMesh.updatePointCloud();
+            this.contourLayer.update();
+          });
+        });
+
+        // Slope angle control
+        const slopeAngleSlider = document.getElementById('slopeAngle');
+        const slopeAngleValue = document.getElementById('slopeAngle-value');
+
+        slopeAngleSlider.addEventListener('input', () => {
+          slopeAngleValue.textContent = `${Math.round(slopeAngleSlider.value)}°`;
+        });
+
+        slopeAngleSlider.addEventListener('change', () => {
+          CONFIG.color.slopeAngle = parseFloat(slopeAngleSlider.value);
+          this.colorPlane.generate();
+          this.terrainMesh.updateFromColorPlane();
+          this.terrainMesh.updatePointCloud();
+          this.contourLayer.update();
+        });
+
+        // Iridescent controls
+        const bindIridSlider = (id, uniformName) => {
+          const slider = document.getElementById(id);
+          const valueDisplay = document.getElementById(`${id}-value`);
+
+          slider.addEventListener('input', () => {
+            if (valueDisplay) {
+              valueDisplay.textContent = parseFloat(slider.value).toFixed(2);
+            }
+            // Update uniform in real-time
+            if (this.terrainMesh && this.terrainMesh.material) {
+              this.terrainMesh.material.uniforms[uniformName].value = parseFloat(slider.value);
+            }
+          });
+
+          slider.addEventListener('change', () => {
+            const keys = id.replace('irid', '').toLowerCase();
+            CONFIG.color.iridescent[keys === 'basehue' ? 'baseHue' : keys] = parseFloat(slider.value);
+          });
+        };
+
+        bindIridSlider('iridSpeed', 'iridSpeed');
+        bindIridSlider('iridScale', 'iridScale');
+        bindIridSlider('iridIntensity', 'iridIntensity');
+        bindIridSlider('iridBaseHue', 'iridBaseHue');
+
+        // Contour controls
+        document.getElementById('contoursEnabled').addEventListener('change', (e) => {
+          CONFIG.contours.enabled = e.target.checked;
+          this.contourLayer.setVisible(e.target.checked);
+          if (e.target.checked) this.contourLayer.update();
+
+          const contourControls = document.getElementById('contour-controls');
+          contourControls.classList.toggle('hidden', !e.target.checked);
+        });
+
+        bindSlider('contourInterval', 'contours.interval', () => this.contourLayer.update());
+        bindSlider('contourOpacity', 'contours.opacity', () => this.contourLayer.update());
+        bindSlider('contourThickness', 'contours.lineWidth', () => this.contourLayer.update());
+
+        document.getElementById('shoreLines').addEventListener('change', (e) => {
+          CONFIG.contours.shoreLines = e.target.checked;
+          this.contourLayer.update();
+        });
+
+        document.getElementById('contourColorMode').addEventListener('change', (e) => {
+          CONFIG.contours.colorMode = e.target.value;
+          document.getElementById('contourColor-group').classList.toggle('hidden', e.target.value !== 'solid');
+          this.contourLayer.update();
+        });
+
+        document.getElementById('contourColor').addEventListener('change', (e) => {
+          CONFIG.contours.color = e.target.value;
+          this.contourLayer.update();
+        });
+
+        // Surface controls
+        document.getElementById('surfaceEnabled').addEventListener('change', (e) => {
+          CONFIG.surface.enabled = e.target.checked;
+          this.terrainMesh.setVisible(e.target.checked);
+
+          // Mutual exclusivity with metallic surface
+          if (e.target.checked && CONFIG.surface.metallicShading) {
+            document.getElementById('metallicShading').checked = false;
+            CONFIG.surface.metallicShading = false;
+            this.metallicSurface.setVisibility(false);
+            document.getElementById('metallic-controls').classList.add('hidden');
+          }
+        });
+
+        document.getElementById('surfaceMode').addEventListener('change', (e) => {
+          CONFIG.surface.mode = e.target.value;
+
+          // Apply the appropriate mode
+          const isPointGrid = e.target.value === 'pointGrid';
+          const isWireframe = e.target.value === 'wireframe';
+          const isBackground = e.target.value === 'background';
+
+          this.terrainMesh.setWireframe(isWireframe);
+          this.terrainMesh.setPointGrid(isPointGrid);
+          this.terrainMesh.setBackgroundMode(isBackground, CONFIG.scene.backgroundColor);
+
+          // When switching to plane or background mode, ensure mesh is visible
+          if ((e.target.value === 'plane' || isBackground) && this.terrainMesh.mesh && this.terrainMesh.points) {
+            this.terrainMesh.mesh.visible = true;
+            this.terrainMesh.points.visible = false;
+          }
+
+          // Show/hide point grid controls
+          document.getElementById('pointGrid-controls').classList.toggle('hidden', !isPointGrid);
+        });
+
+        document.getElementById('pointSize').addEventListener('input', (e) => {
+          const value = parseFloat(e.target.value);
+          document.getElementById('pointSize-value').textContent = value.toFixed(1);
+          CONFIG.surface.pointSize = value;
+          this.terrainMesh.setPointSize(value);
+        });
+
+        document.getElementById('gridScale').addEventListener('input', (e) => {
+          const value = parseInt(e.target.value);
+          document.getElementById('gridScale-value').textContent = value;
+        });
+
+        document.getElementById('gridScale').addEventListener('change', (e) => {
+          const value = parseInt(e.target.value);
+          CONFIG.surface.gridScale = value;
+          this.terrainMesh.setGridScale(value);
+        });
+
+        document.getElementById('reliefShading').addEventListener('change', (e) => {
+          CONFIG.surface.reliefShading = e.target.checked;
+          this.terrainMesh.setReliefShading(e.target.checked);
+        });
+
+        // Metallic surface toggle
+        document.getElementById('metallicShading').addEventListener('change', (e) => {
+          CONFIG.surface.metallicShading = e.target.checked;
+          this.metallicSurface.setVisibility(e.target.checked);
+          document.getElementById('metallic-controls').classList.toggle('hidden', !e.target.checked);
+
+          // Mutual exclusivity with matt surface
+          if (e.target.checked && CONFIG.surface.enabled) {
+            document.getElementById('surfaceEnabled').checked = false;
+            CONFIG.surface.enabled = false;
+            this.terrainMesh.setVisible(false);
+          }
+        });
+
+        // Metallic surface parameter sliders
+        const bindMetallicSlider = (id, method, configKey) => {
+          const slider = document.getElementById(id);
+          const valueDisplay = document.getElementById(`${id}-value`);
+
+          slider.addEventListener('input', () => {
+            const value = parseFloat(slider.value);
+            valueDisplay.textContent = value.toFixed(2);
+            CONFIG.surface.metallic[configKey] = value;
+            this.metallicSurface[method](value);
+          });
+        };
+
+        bindMetallicSlider('metallicOpacity', 'setOpacity', 'opacity');
+        bindMetallicSlider('baseBrightness', 'setBaseBrightness', 'baseBrightness');
+        bindMetallicSlider('shadowLift', 'setShadowLift', 'shadowLift');
+        bindMetallicSlider('shininess', 'setShininess', 'shininess');
+        bindMetallicSlider('edgeSharpness', 'setEdgeSharpness', 'edgeSharpness');
+        bindMetallicSlider('edgeBrightness', 'setEdgeBrightness', 'edgeBrightness');
+        bindMetallicSlider('iridescence', 'setIridescence', 'iridescence');
+
+        bindSlider('surfaceOpacity', 'surface.opacity', () => {
+          this.terrainMesh.setOpacity(CONFIG.surface.opacity);
+        });
+
+        // Camera controls
+        document.getElementById('cameraMode').addEventListener('change', (e) => {
+          this.cameraController.setMode(e.target.value);
+        });
+
+        document.getElementById('autoRotate').addEventListener('change', (e) => {
+          CONFIG.camera.autoRotate = e.target.checked;
+          this.cameraController.setAutoRotate(e.target.checked);
+          document.getElementById('rotateSpeed-group').classList.toggle('hidden', !e.target.checked);
+        });
+
+        bindSlider('rotateSpeed', 'camera.rotateSpeed', () => {
+          this.cameraController.setRotateSpeed(CONFIG.camera.rotateSpeed);
+        });
+
+        document.getElementById('autoPan').addEventListener('change', (e) => {
+          CONFIG.camera.autoPan = e.target.checked;
+          document.getElementById('panSpeed-group').classList.toggle('hidden', !e.target.checked);
+        });
+
+        bindSlider('panSpeed', 'camera.panSpeed', null);
+
+        // Scene controls
+        document.getElementById('backgroundColor').addEventListener('input', (e) => {
+          CONFIG.scene.backgroundColor = e.target.value;
+          this.scene.background = new THREE.Color(e.target.value);
+          // Keep background mode surface in sync
+          if (CONFIG.surface.mode === 'background') {
+            this.terrainMesh.updateBackgroundColor(e.target.value);
+          }
+        });
+      }
+
+      onResize() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        this.renderer.setSize(width, height);
+        this.cameraController.onResize(width, height);
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+
+        const delta = this.clock.getDelta();
+        const elapsedTime = this.clock.getElapsedTime();
+
+        // Update time uniform for animated color modes
+        if (this.terrainMesh && this.terrainMesh.material) {
+          this.terrainMesh.material.uniforms.u_time.value = elapsedTime;
+        }
+
+        // Update metallic surface camera
+        if (this.metallicSurface) {
+          const camera = this.cameraController.getActiveCamera();
+          this.metallicSurface.updateCamera(camera);
+        }
+
+        this.cameraController.update(delta);
+        this.renderer.render(this.scene, this.cameraController.getActiveCamera());
+      }
+    }
+
+    // ============================================
+    // Collapsible Sections
+    // ============================================
+    document.querySelectorAll('.section-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const section = header.parentElement;
+        section.classList.toggle('collapsed');
+      });
+    });
+
+    // ============================================
+    // Initialize
+    // ============================================
+    const app = new LandscapeVisualizer();
+    app.init();
+  </script>
+</body>
+</html>
