@@ -3324,6 +3324,15 @@ ${svg}
             east: CONFIG.terrain.clipEast,
             south: CONFIG.terrain.clipSouth,
             west: CONFIG.terrain.clipWest
+          },
+          contours: {
+            enabled: CONFIG.contours.enabled,
+            interval: CONFIG.contours.interval,
+            shoreLines: CONFIG.contours.shoreLines,
+            colorMode: CONFIG.contours.colorMode,
+            color: CONFIG.contours.color,
+            opacity: CONFIG.contours.opacity,
+            lineWidth: CONFIG.contours.lineWidth
           }
         };
       }
@@ -3343,11 +3352,10 @@ ${svg}
 
           const heightTexDataUrl = this.bakeHeightData();
           const colorTexDataUrl = this.bakeColorTexture();
-          const contourData = this.bakeContourData();
           const state = this.captureSceneState();
 
           const hasContent = state.mattSurface.visible || state.metallicSurface.visible ||
-            (contourData && contourData.segments.length > 0);
+            state.contours.enabled;
           if (!hasContent) {
             throw new Error('Nothing visible to export. Enable at least one surface or contours.');
           }
@@ -3363,7 +3371,7 @@ ${svg}
             };
           }
 
-          const html = this.buildInteractiveHtmlPackage(heightTexDataUrl, colorTexDataUrl, contourData, pointCloudData, state);
+          const html = this.buildInteractiveHtmlPackage(heightTexDataUrl, colorTexDataUrl, pointCloudData, state);
 
           this.downloadFile(`${this.getExportBaseName()}-interactive.html`, html, 'text/html;charset=utf-8');
 
@@ -3375,9 +3383,9 @@ ${svg}
         }
       }
 
-      buildInteractiveHtmlPackage(heightTexDataUrl, colorTexDataUrl, contourData, pointCloudData, state) {
+      buildInteractiveHtmlPackage(heightTexDataUrl, colorTexDataUrl, pointCloudData, state) {
         const s = state;
-        const needsContours = contourData && contourData.segments.length > 0;
+        const needsContours = s.contours.enabled;
         const needsMatt = s.mattSurface.visible && s.mattSurface.mode !== 'pointGrid' && s.mattSurface.mode !== 'background';
         const needsBackground = s.mattSurface.visible && s.mattSurface.mode === 'background';
         const needsMetallic = s.metallicSurface.visible;
@@ -3388,7 +3396,10 @@ ${svg}
         const lineImports = needsContours ? `
     import { Line2 } from 'three/addons/lines/Line2.js';
     import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-    import { LineGeometry } from 'three/addons/lines/LineGeometry.js';` : '';
+    import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+    import * as d3 from 'd3';` : '';
+
+        const d3Import = needsContours ? `"d3": "https://cdn.jsdelivr.net/npm/d3@7/+esm"` : '';
 
         // Build the terrain shader — stripped of iridescent code if not needed
         const terrainVertexShader = `
@@ -3567,7 +3578,8 @@ ${svg}
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"${d3Import ? `,
+      ${d3Import}` : ''}
     }
   }
   </${''}script>
@@ -3578,7 +3590,6 @@ ${svg}
     // --- Baked data ---
     const HEIGHT_TEX_URL = "${heightTexDataUrl}";
     const COLOR_TEX_URL = ${colorTexDataUrl ? `"${colorTexDataUrl}"` : 'null'};
-    const CONTOUR_DATA = ${contourData ? JSON.stringify(contourData).replace(/</g, '\\u003c') : 'null'};
     const POINT_CLOUD = ${pointCloudData ? JSON.stringify(pointCloudData).replace(/</g, '\\u003c') : 'null'};
     const STATE = ${JSON.stringify(state).replace(/</g, '\\u003c')};
 
@@ -3773,45 +3784,138 @@ ${svg}
       scene.add(new THREE.Points(pcGeom, pcMat));
     }` : '// Point cloud not active'}
 
-    // --- Contour lines ---
+    // --- Contour lines (generated client-side from heightmap via D3) ---
     ${needsContours ? `{
-      const CD = CONTOUR_DATA;
+      const CC = STATE.contours;
+      const side = T.segments + 1;
+      const useTerrain = CC.colorMode === 'terrain';
+      const solidColor = new THREE.Color(CC.color);
       const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
-      const solidColor = new THREE.Color(CD.solidColor);
 
-      CD.segments.forEach(seg => {
-        const positions = b64ToFloat32(seg.p);
+      // Build height grid for d3.contours — decode from the PNG pixels
+      const heightGrid = new Float32Array(side * side);
+      for (let i = 0; i < side * side; i++) {
+        const pIdx = i * 4;
+        const normalized = (hPixels[pIdx] * 256 + hPixels[pIdx + 1]) / 65535;
+        heightGrid[i] = normalized * (T.maxHeight - T.minHeight) + T.minHeight;
+      }
+
+      // Bilinear height sampling
+      function sampleHeight(worldX, worldZ) {
+        const gx = ((worldX + T.size * 0.5) / T.size) * T.segments;
+        const gz = ((worldZ + T.size * 0.5) / T.size) * T.segments;
+        const x0 = Math.floor(gx), z0 = Math.floor(gz);
+        const x1 = Math.min(x0 + 1, T.segments), z1 = Math.min(z0 + 1, T.segments);
+        const fx = gx - x0, fz = gz - z0;
+        const h00 = heightGrid[z0 * side + x0], h10 = heightGrid[z0 * side + x1];
+        const h01 = heightGrid[z1 * side + x0], h11 = heightGrid[z1 * side + x1];
+        return (h00 + (h10 - h00) * fx) + ((h01 + (h11 - h01) * fx) - (h00 + (h10 - h00) * fx)) * fz;
+      }
+
+      // Color sampling from color texture canvas (if terrain-colored)
+      let colorPixels = null;
+      let colorSide = 0;
+      if (useTerrain && COLOR_TEX_URL) {
+        const cImg = await loadImage(COLOR_TEX_URL);
+        const cCanvas = document.createElement('canvas');
+        cCanvas.width = cImg.width; cCanvas.height = cImg.height;
+        const cCtx = cCanvas.getContext('2d');
+        cCtx.drawImage(cImg, 0, 0);
+        colorPixels = cCtx.getImageData(0, 0, cImg.width, cImg.height).data;
+        colorSide = cImg.width;
+      }
+      function sampleColor(worldX, worldZ) {
+        if (!colorPixels) return { r: 1, g: 1, b: 1 };
+        const u = (worldX + T.size * 0.5) / T.size;
+        const v = (worldZ + T.size * 0.5) / T.size;
+        const px = Math.max(0, Math.min(colorSide - 1, Math.round(u * (colorSide - 1))));
+        const py = Math.max(0, Math.min(colorSide - 1, Math.round(v * (colorSide - 1))));
+        const idx = (py * colorSide + px) * 4;
+        return { r: colorPixels[idx] / 255, g: colorPixels[idx + 1] / 255, b: colorPixels[idx + 2] / 255 };
+      }
+
+      // Compute thresholds
+      const thresholds = [];
+      if (CC.shoreLines) thresholds.push(T.minHeight + 0.001);
+      for (let v = Math.ceil(T.minHeight / CC.interval) * CC.interval; v < T.maxHeight; v += CC.interval) {
+        thresholds.push(v);
+      }
+      if (CC.shoreLines) thresholds.push(T.maxHeight - 0.001);
+
+      // Clipping bounds
+      const cl = STATE.clipping;
+      const halfSize = T.size * 0.5;
+      const clipBounds = {
+        north: halfSize - cl.north * T.size,
+        south: -halfSize + cl.south * T.size,
+        east: halfSize - cl.east * T.size,
+        west: -halfSize + cl.west * T.size
+      };
+      const isInBounds = (x, z) =>
+        x >= clipBounds.west && x <= clipBounds.east &&
+        z >= clipBounds.south && z <= clipBounds.north;
+
+      // Generate contours
+      const contours = d3.contours()
+        .size([side, side])
+        .thresholds(thresholds)(heightGrid);
+      const yOffset = 0.02;
+
+      function addLine(positions, colors) {
         if (positions.length < 6) return;
-
         const lineGeom = new LineGeometry();
-        lineGeom.setPositions(Array.from(positions));
-
+        lineGeom.setPositions(positions);
         let mat;
-        if (CD.useTerrain && seg.c) {
-          const colors = b64ToFloat32(seg.c);
-          lineGeom.setColors(Array.from(colors));
-          mat = new LineMaterial({
-            vertexColors: true,
-            opacity: CD.opacity,
-            transparent: true,
-            linewidth: CD.lineWidth,
-            alphaToCoverage: false
-          });
+        if (useTerrain && colors.length > 0) {
+          lineGeom.setColors(colors);
+          mat = new LineMaterial({ vertexColors: true, opacity: CC.opacity, transparent: true, linewidth: CC.lineWidth, alphaToCoverage: false });
         } else {
-          mat = new LineMaterial({
-            color: solidColor,
-            opacity: CD.opacity,
-            transparent: true,
-            linewidth: CD.lineWidth,
-            alphaToCoverage: false
-          });
+          mat = new LineMaterial({ color: solidColor, opacity: CC.opacity, transparent: true, linewidth: CC.lineWidth, alphaToCoverage: false });
         }
         mat.resolution.copy(resolution);
-
         const line = new Line2(lineGeom, mat);
         line.computeLineDistances();
         scene.add(line);
+      }
+
+      contours.forEach(contour => {
+        contour.coordinates.forEach(polygon => {
+          polygon.forEach(ring => {
+            if (ring.length < 2) return;
+            let curPos = [], curCol = [];
+            ring.forEach(([gx, gz]) => {
+              const wx = (gx / T.segments - 0.5) * T.size;
+              const wz = (gz / T.segments - 0.5) * T.size;
+              if (isInBounds(wx, wz)) {
+                curPos.push(wx, sampleHeight(wx, wz) + yOffset, wz);
+                if (useTerrain) { const c = sampleColor(wx, wz); curCol.push(c.r, c.g, c.b); }
+              } else if (curPos.length >= 6) {
+                addLine(curPos, curCol);
+                curPos = []; curCol = [];
+              } else {
+                curPos = []; curCol = [];
+              }
+            });
+            if (curPos.length >= 6) addLine(curPos, curCol);
+          });
+        });
       });
+
+      // Boundary lines along clipped edges
+      const numSamples = Math.min(T.segments, 256);
+      function addBoundary(samples) {
+        if (samples.length < 2) return;
+        const positions = [], colors = [];
+        samples.forEach(([x, z]) => {
+          positions.push(x, sampleHeight(x, z) + yOffset, z);
+          if (useTerrain) { const c = sampleColor(x, z); colors.push(c.r, c.g, c.b); }
+        });
+        addLine(positions, colors);
+      }
+      if (cl.north > 0) { const s = []; for (let i = 0; i <= numSamples; i++) { const t = i/numSamples; s.push([clipBounds.west + t*(clipBounds.east-clipBounds.west), clipBounds.north]); } addBoundary(s); }
+      if (cl.south > 0) { const s = []; for (let i = 0; i <= numSamples; i++) { const t = i/numSamples; s.push([clipBounds.west + t*(clipBounds.east-clipBounds.west), clipBounds.south]); } addBoundary(s); }
+      if (cl.east > 0) { const s = []; for (let i = 0; i <= numSamples; i++) { const t = i/numSamples; s.push([clipBounds.east, clipBounds.south + t*(clipBounds.north-clipBounds.south)]); } addBoundary(s); }
+      if (cl.west > 0) { const s = []; for (let i = 0; i <= numSamples; i++) { const t = i/numSamples; s.push([clipBounds.west, clipBounds.south + t*(clipBounds.north-clipBounds.south)]); } addBoundary(s); }
 
       window.addEventListener('resize', () => {
         const res = new THREE.Vector2(window.innerWidth, window.innerHeight);
