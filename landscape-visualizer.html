@@ -317,6 +317,25 @@
       flex: 1;
     }
 
+    .export-note {
+      font-size: 11px;
+      line-height: 1.5;
+      color: #8d8d98;
+      margin-bottom: 14px;
+    }
+
+    .export-status {
+      margin-top: 12px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #7fb08b;
+      min-height: 16px;
+    }
+
+    .export-status.error {
+      color: #ff8f8f;
+    }
+
     #info {
       position: fixed;
       bottom: 20px;
@@ -784,6 +803,42 @@
           <label>Background Color</label>
           <input type="color" id="backgroundColor" value="#ffffff">
         </div>
+      </div>
+    </div>
+
+    <div class="section" data-section="export">
+      <div class="section-header">Export</div>
+      <div class="section-content">
+        <p class="export-note">
+          Export the current contour view as a static figure. SVG keeps only the contour linework.
+          Embed HTML is a self-contained package that can drop into a static site or iframe.
+        </p>
+
+        <div class="row">
+          <div class="control-group">
+            <label>Width</label>
+            <input type="number" id="exportWidth" min="200" max="6000" step="50" value="1600">
+          </div>
+
+          <div class="control-group">
+            <label>Height</label>
+            <input type="number" id="exportHeight" min="200" max="6000" step="50" value="900">
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="exportTransparentBg" checked>
+            <label for="exportTransparentBg">Transparent Background</label>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="exportSvgBtn">Download SVG</button>
+          <button id="exportEmbedBtn">Download Embed HTML</button>
+        </div>
+
+        <div id="export-status" class="export-status">Ready to export the current contour view.</div>
       </div>
     </div>
   </div>
@@ -1551,161 +1606,54 @@
         this.scene.add(this.group);
       }
 
-      generate() {
-        // Clear existing contours
+      clear() {
         while (this.group.children.length > 0) {
           const child = this.group.children[0];
           if (child.geometry) child.geometry.dispose();
           if (child.material) child.material.dispose();
           this.group.remove(child);
         }
+      }
 
-        if (!CONFIG.contours.enabled) return;
-
-        const segments = this.heightmap.segments;
-        const data = this.heightmap.toContourGrid();
-
-        // Calculate clipping boundaries in world coordinates
+      getClipBounds() {
         const halfSize = this.heightmap.size * 0.5;
-        const clipBounds = {
-          north: halfSize - CONFIG.terrain.clipNorth * this.heightmap.size,  // positive z boundary
-          south: -halfSize + CONFIG.terrain.clipSouth * this.heightmap.size, // negative z boundary
-          east: halfSize - CONFIG.terrain.clipEast * this.heightmap.size,    // positive x boundary
-          west: -halfSize + CONFIG.terrain.clipWest * this.heightmap.size    // negative x boundary
+        return {
+          north: halfSize - CONFIG.terrain.clipNorth * this.heightmap.size,
+          south: -halfSize + CONFIG.terrain.clipSouth * this.heightmap.size,
+          east: halfSize - CONFIG.terrain.clipEast * this.heightmap.size,
+          west: -halfSize + CONFIG.terrain.clipWest * this.heightmap.size
         };
+      }
 
-        // Generate thresholds
+      getThresholds() {
         const { interval, shoreLines } = CONFIG.contours;
         const thresholds = [];
 
-        // Add shore line at bottom edge (just above minHeight)
         if (shoreLines) {
           thresholds.push(this.heightmap.minHeight + 0.001);
         }
 
-        // Regular interval thresholds
-        const regularThresholds = d3.range(
+        thresholds.push(...d3.range(
           Math.ceil(this.heightmap.minHeight / interval) * interval,
           this.heightmap.maxHeight,
           interval
-        );
-        thresholds.push(...regularThresholds);
+        ));
 
-        // Add shore line at top edge (just below maxHeight)
         if (shoreLines) {
           thresholds.push(this.heightmap.maxHeight - 0.001);
         }
 
-        // Create contour generator
-        const contourGenerator = d3.contours()
-          .size([segments + 1, segments + 1])
-          .thresholds(thresholds);
-
-        const contours = contourGenerator(data);
-
-        // Get renderer resolution for LineMaterial
-        const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
-
-        // Convert to 3D lines using Line2 for proper thickness
-        const useTerrain = CONFIG.contours.colorMode === 'terrain';
-        const solidColor = new THREE.Color(CONFIG.contours.color);
-        const yOffset = 0.02; // Small offset to prevent z-fighting
-        const lineWidth = CONFIG.contours.lineWidth;
-
-        contours.forEach((contour, index) => {
-
-          // Process each ring in the MultiPolygon
-          contour.coordinates.forEach(polygon => {
-            polygon.forEach(ring => {
-              if (ring.length < 2) return;
-
-              // Helper to check if a point is within clipping bounds
-              const isInBounds = (worldX, worldZ) => {
-                return worldX >= clipBounds.west && worldX <= clipBounds.east &&
-                       worldZ >= clipBounds.south && worldZ <= clipBounds.north;
-              };
-
-              // Segment the ring into continuous line segments that are within bounds
-              const lineSegments = [];
-              let currentSegment = { positions: [], colors: [] };
-
-              ring.forEach(([gx, gz]) => {
-                // Convert grid coords to world coords
-                const worldX = (gx / segments - 0.5) * this.heightmap.size;
-                const worldZ = (gz / segments - 0.5) * this.heightmap.size;
-
-                if (isInBounds(worldX, worldZ)) {
-                  // Point is inside bounds - add to current segment
-                  const y = this.heightmap.sampleHeight(worldX, worldZ) + yOffset;
-                  currentSegment.positions.push(worldX, y, worldZ);
-
-                  if (useTerrain) {
-                    const col = this.colorPlane.sampleColor(worldX, worldZ);
-                    currentSegment.colors.push(col.r, col.g, col.b);
-                  }
-                } else {
-                  // Point is outside bounds - end current segment if it has points
-                  if (currentSegment.positions.length >= 6) {
-                    lineSegments.push(currentSegment);
-                    currentSegment = { positions: [], colors: [] };
-                  } else {
-                    // Discard incomplete segment
-                    currentSegment = { positions: [], colors: [] };
-                  }
-                }
-              });
-
-              // Add final segment if valid
-              if (currentSegment.positions.length >= 6) {
-                lineSegments.push(currentSegment);
-              }
-
-              // Create line geometry for each segment
-              lineSegments.forEach(segment => {
-                const geometry = new LineGeometry();
-                geometry.setPositions(segment.positions);
-
-                let material;
-                if (useTerrain) {
-                  geometry.setColors(segment.colors);
-                  material = new LineMaterial({
-                    vertexColors: true,
-                    opacity: CONFIG.contours.opacity,
-                    transparent: true,
-                    linewidth: lineWidth,
-                    alphaToCoverage: false
-                  });
-                } else {
-                  material = new LineMaterial({
-                    color: solidColor,
-                    opacity: CONFIG.contours.opacity,
-                    transparent: true,
-                    linewidth: lineWidth,
-                    alphaToCoverage: false
-                  });
-                }
-                material.resolution.copy(resolution);
-
-                const line = new Line2(geometry, material);
-                line.computeLineDistances();
-                this.group.add(line);
-              });
-            });
-          });
-        });
-
-        // Generate boundary lines along clipped edges
-        this.generateBoundaryLines(clipBounds, yOffset, useTerrain, solidColor, resolution, lineWidth);
+        return thresholds;
       }
 
-      generateBoundaryLines(clipBounds, yOffset, useTerrain, solidColor, resolution, lineWidth) {
+      buildBoundarySegments(clipBounds, yOffset, useTerrain) {
         const { clipNorth, clipEast, clipSouth, clipWest } = CONFIG.terrain;
         const size = this.heightmap.size;
         const segments = this.heightmap.segments;
-        const numSamples = Math.min(segments, 256); // Sample points along each edge
+        const numSamples = Math.min(segments, 256);
+        const boundarySegments = [];
 
-        // Helper to create a boundary line
-        const createBoundaryLine = (samples) => {
+        const createBoundarySegment = (samples) => {
           if (samples.length < 2) return;
 
           const positions = [];
@@ -1721,36 +1669,9 @@
             }
           });
 
-          const geometry = new LineGeometry();
-          geometry.setPositions(positions);
-
-          let material;
-          if (useTerrain) {
-            geometry.setColors(colors);
-            material = new LineMaterial({
-              vertexColors: true,
-              opacity: CONFIG.contours.opacity,
-              transparent: true,
-              linewidth: lineWidth * 1.5, // Slightly thicker for visibility
-              alphaToCoverage: false
-            });
-          } else {
-            material = new LineMaterial({
-              color: solidColor,
-              opacity: CONFIG.contours.opacity,
-              transparent: true,
-              linewidth: lineWidth * 1.5,
-              alphaToCoverage: false
-            });
-          }
-          material.resolution.copy(resolution);
-
-          const line = new Line2(geometry, material);
-          line.computeLineDistances();
-          this.group.add(line);
+          boundarySegments.push({ positions, colors });
         };
 
-        // North edge (positive z)
         if (clipNorth > 0) {
           const z = clipBounds.north;
           const samples = [];
@@ -1759,10 +1680,9 @@
             const x = clipBounds.west + t * (clipBounds.east - clipBounds.west);
             samples.push([x, z]);
           }
-          createBoundaryLine(samples);
+          createBoundarySegment(samples);
         }
 
-        // South edge (negative z)
         if (clipSouth > 0) {
           const z = clipBounds.south;
           const samples = [];
@@ -1771,10 +1691,9 @@
             const x = clipBounds.west + t * (clipBounds.east - clipBounds.west);
             samples.push([x, z]);
           }
-          createBoundaryLine(samples);
+          createBoundarySegment(samples);
         }
 
-        // East edge (positive x)
         if (clipEast > 0) {
           const x = clipBounds.east;
           const samples = [];
@@ -1783,10 +1702,9 @@
             const z = clipBounds.south + t * (clipBounds.north - clipBounds.south);
             samples.push([x, z]);
           }
-          createBoundaryLine(samples);
+          createBoundarySegment(samples);
         }
 
-        // West edge (negative x)
         if (clipWest > 0) {
           const x = clipBounds.west;
           const samples = [];
@@ -1795,8 +1713,125 @@
             const z = clipBounds.south + t * (clipBounds.north - clipBounds.south);
             samples.push([x, z]);
           }
-          createBoundaryLine(samples);
+          createBoundarySegment(samples);
         }
+
+        return boundarySegments;
+      }
+
+      buildRenderableSegments() {
+        const useTerrain = CONFIG.contours.colorMode === 'terrain';
+        const solidColor = new THREE.Color(CONFIG.contours.color);
+        const lineWidth = CONFIG.contours.lineWidth;
+
+        if (!CONFIG.contours.enabled) {
+          return { segments: [], useTerrain, solidColor, lineWidth };
+        }
+
+        const segments = this.heightmap.segments;
+        const data = this.heightmap.toContourGrid();
+        const clipBounds = this.getClipBounds();
+        const thresholds = this.getThresholds();
+        const contourGenerator = d3.contours()
+          .size([segments + 1, segments + 1])
+          .thresholds(thresholds);
+        const contours = contourGenerator(data);
+        const yOffset = 0.02;
+        const renderSegments = [];
+
+        contours.forEach(contour => {
+          contour.coordinates.forEach(polygon => {
+            polygon.forEach(ring => {
+              if (ring.length < 2) return;
+
+              const isInBounds = (worldX, worldZ) => {
+                return worldX >= clipBounds.west && worldX <= clipBounds.east &&
+                       worldZ >= clipBounds.south && worldZ <= clipBounds.north;
+              };
+
+              let currentSegment = { positions: [], colors: [] };
+
+              ring.forEach(([gx, gz]) => {
+                const worldX = (gx / segments - 0.5) * this.heightmap.size;
+                const worldZ = (gz / segments - 0.5) * this.heightmap.size;
+
+                if (isInBounds(worldX, worldZ)) {
+                  const y = this.heightmap.sampleHeight(worldX, worldZ) + yOffset;
+                  currentSegment.positions.push(worldX, y, worldZ);
+
+                  if (useTerrain) {
+                    const col = this.colorPlane.sampleColor(worldX, worldZ);
+                    currentSegment.colors.push(col.r, col.g, col.b);
+                  }
+                } else if (currentSegment.positions.length >= 6) {
+                  renderSegments.push(currentSegment);
+                  currentSegment = { positions: [], colors: [] };
+                } else {
+                  currentSegment = { positions: [], colors: [] };
+                }
+              });
+
+              if (currentSegment.positions.length >= 6) {
+                renderSegments.push(currentSegment);
+              }
+            });
+          });
+        });
+
+        renderSegments.push(...this.buildBoundarySegments(clipBounds, yOffset, useTerrain));
+
+        return { segments: renderSegments, useTerrain, solidColor, lineWidth };
+      }
+
+      createLine(segment, useTerrain, solidColor, resolution, lineWidth) {
+        if (!segment.positions || segment.positions.length < 6) {
+          return null;
+        }
+
+        const geometry = new LineGeometry();
+        geometry.setPositions(segment.positions);
+
+        let material;
+        if (useTerrain) {
+          geometry.setColors(segment.colors);
+          material = new LineMaterial({
+            vertexColors: true,
+            opacity: CONFIG.contours.opacity,
+            transparent: true,
+            linewidth: lineWidth,
+            alphaToCoverage: false
+          });
+        } else {
+          material = new LineMaterial({
+            color: solidColor,
+            opacity: CONFIG.contours.opacity,
+            transparent: true,
+            linewidth: lineWidth,
+            alphaToCoverage: false
+          });
+        }
+
+        material.resolution.copy(resolution);
+
+        const line = new Line2(geometry, material);
+        line.computeLineDistances();
+        return line;
+      }
+
+      generate() {
+        this.clear();
+
+        if (!CONFIG.contours.enabled) return;
+
+        const { segments, useTerrain, solidColor, lineWidth } = this.buildRenderableSegments();
+        const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+
+        segments.forEach(segment => {
+          const line = this.createLine(segment, useTerrain, solidColor, resolution, lineWidth);
+          if (line) {
+            this.group.add(line);
+          }
+        });
       }
 
       update() {
@@ -2638,6 +2673,246 @@
         this.contourLayer.update();
       }
 
+      setExportStatus(message, isError = false) {
+        const status = document.getElementById('export-status');
+        if (!status) return;
+        status.textContent = message;
+        status.classList.toggle('error', isError);
+      }
+
+      getExportSettings() {
+        const widthInput = document.getElementById('exportWidth');
+        const heightInput = document.getElementById('exportHeight');
+        const transparentBackground = document.getElementById('exportTransparentBg').checked;
+
+        const width = Math.max(200, parseInt(widthInput.value, 10) || window.innerWidth);
+        const height = Math.max(200, parseInt(heightInput.value, 10) || window.innerHeight);
+
+        widthInput.value = width;
+        heightInput.value = height;
+
+        return { width, height, transparentBackground };
+      }
+
+      getExportBaseName() {
+        const mode = CONFIG.terrain.mode;
+        const seed = mode === 'sculpted' ? CONFIG.terrain.sculpted.seed : CONFIG.terrain.seed;
+        const resolution = CONFIG.terrain.highRes ? '512' : '256';
+        return `landscape-${mode}-${seed}-${resolution}`;
+      }
+
+      downloadFile(filename, content, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+
+      getSerializableConfig() {
+        return {
+          terrain: {
+            ...CONFIG.terrain,
+            imageData: CONFIG.terrain.imageData ? {
+              width: CONFIG.terrain.imageData.width,
+              height: CONFIG.terrain.imageData.height
+            } : null
+          },
+          color: structuredClone(CONFIG.color),
+          contours: structuredClone(CONFIG.contours),
+          surface: structuredClone(CONFIG.surface),
+          camera: structuredClone(CONFIG.camera),
+          scene: structuredClone(CONFIG.scene)
+        };
+      }
+
+      buildExportCamera(width, height) {
+        const sourceCamera = this.cameraController.getActiveCamera();
+        const exportCamera = sourceCamera.clone();
+        const aspect = width / height;
+
+        if (sourceCamera.isPerspectiveCamera) {
+          exportCamera.aspect = aspect;
+        } else if (sourceCamera.isOrthographicCamera) {
+          const frustumHeight = sourceCamera.top - sourceCamera.bottom;
+          const halfHeight = frustumHeight * 0.5;
+          const halfWidth = halfHeight * aspect;
+          exportCamera.left = -halfWidth;
+          exportCamera.right = halfWidth;
+          exportCamera.top = halfHeight;
+          exportCamera.bottom = -halfHeight;
+        }
+
+        exportCamera.position.copy(sourceCamera.position);
+        exportCamera.quaternion.copy(sourceCamera.quaternion);
+        exportCamera.updateProjectionMatrix();
+        exportCamera.updateMatrixWorld(true);
+
+        return exportCamera;
+      }
+
+      getSvgStrokeColor(segment, useTerrain, solidColor) {
+        if (!useTerrain || !segment.colors || segment.colors.length === 0) {
+          return solidColor.getStyle();
+        }
+
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        const count = segment.colors.length / 3;
+
+        for (let i = 0; i < segment.colors.length; i += 3) {
+          r += segment.colors[i];
+          g += segment.colors[i + 1];
+          b += segment.colors[i + 2];
+        }
+
+        return `rgb(${Math.round(r / count * 255)}, ${Math.round(g / count * 255)}, ${Math.round(b / count * 255)})`;
+      }
+
+      buildContourSvg({ width, height, transparentBackground }) {
+        if (!CONFIG.contours.enabled) {
+          throw new Error('Enable contours before exporting.');
+        }
+
+        const { segments, useTerrain, solidColor, lineWidth } = this.contourLayer.buildRenderableSegments();
+        if (segments.length === 0) {
+          throw new Error('No contour geometry available to export.');
+        }
+
+        const exportCamera = this.buildExportCamera(width, height);
+        const vector = new THREE.Vector3();
+        const widthScale = width / window.innerWidth;
+        const heightScale = height / window.innerHeight;
+        const svgLineWidth = Math.max(0.5, lineWidth * ((widthScale + heightScale) * 0.5));
+        const polylineMarkup = [];
+
+        segments.forEach(segment => {
+          const points = [];
+
+          for (let i = 0; i < segment.positions.length; i += 3) {
+            vector.set(
+              segment.positions[i],
+              segment.positions[i + 1],
+              segment.positions[i + 2]
+            ).project(exportCamera);
+
+            if (!Number.isFinite(vector.x) || !Number.isFinite(vector.y)) {
+              continue;
+            }
+
+            const x = ((vector.x + 1) * 0.5 * width).toFixed(2);
+            const y = ((1 - vector.y) * 0.5 * height).toFixed(2);
+            points.push(`${x},${y}`);
+          }
+
+          if (points.length < 2) return;
+
+          polylineMarkup.push(
+            `<polyline points="${points.join(' ')}" fill="none" stroke="${this.getSvgStrokeColor(segment, useTerrain, solidColor)}" stroke-width="${svgLineWidth.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${CONFIG.contours.opacity.toFixed(2)}"/>`
+          );
+        });
+
+        if (polylineMarkup.length === 0) {
+          throw new Error('Projected contour lines are outside the current view.');
+        }
+
+        const metadata = {
+          type: 'landscape-contours',
+          exportedAt: new Date().toISOString(),
+          width,
+          height,
+          transparentBackground,
+          segmentCount: polylineMarkup.length,
+          camera: {
+            mode: this.cameraController.getActiveCamera().isOrthographicCamera ? 'orthographic' : 'perspective',
+            position: this.cameraController.getActiveCamera().position.toArray(),
+            quaternion: this.cameraController.getActiveCamera().quaternion.toArray(),
+            target: this.cameraController.controls.target.toArray()
+          },
+          config: this.getSerializableConfig()
+        };
+
+        const backgroundMarkup = transparentBackground
+          ? ''
+          : `<rect width="${width}" height="${height}" fill="${CONFIG.scene.backgroundColor}"/>`;
+
+        const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Landscape contour export">
+  <title>Landscape Contours</title>
+  ${backgroundMarkup}
+  <g>
+    ${polylineMarkup.join('\n    ')}
+  </g>
+</svg>`;
+
+        return { svg, metadata };
+      }
+
+      buildEmbedPackageHtml(svg, metadata) {
+        const metadataJson = JSON.stringify(metadata, null, 2).replace(/</g, '\\u003c');
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Landscape Embed</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+    }
+
+    .landscape-embed {
+      width: 100%;
+      max-width: ${metadata.width}px;
+      margin: 0;
+    }
+
+    .landscape-embed svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+  <figure class="landscape-embed">
+${svg}
+  </figure>
+  <script type="application/json" id="landscape-metadata">${metadataJson}<\/script>
+</body>
+</html>`;
+      }
+
+      exportContoursSvg() {
+        try {
+          const settings = this.getExportSettings();
+          const { svg } = this.buildContourSvg(settings);
+          this.downloadFile(`${this.getExportBaseName()}-contours.svg`, svg, 'image/svg+xml;charset=utf-8');
+          this.setExportStatus(`Downloaded SVG export at ${settings.width}x${settings.height}.`);
+        } catch (error) {
+          this.setExportStatus(error.message, true);
+        }
+      }
+
+      exportEmbedPackage() {
+        try {
+          const settings = this.getExportSettings();
+          const { svg, metadata } = this.buildContourSvg(settings);
+          const html = this.buildEmbedPackageHtml(svg, metadata);
+          this.downloadFile(`${this.getExportBaseName()}-embed.html`, html, 'text/html;charset=utf-8');
+          this.setExportStatus(`Downloaded self-contained embed HTML at ${settings.width}x${settings.height}.`);
+        } catch (error) {
+          this.setExportStatus(error.message, true);
+        }
+      }
+
       setupControls() {
         // Panel minimize/expand toggle
         const controls = document.getElementById('controls');
@@ -3215,6 +3490,11 @@
             this.terrainMesh.updateBackgroundColor(e.target.value);
           }
         });
+
+        document.getElementById('exportWidth').value = Math.round(window.innerWidth);
+        document.getElementById('exportHeight').value = Math.round(window.innerHeight);
+        document.getElementById('exportSvgBtn').addEventListener('click', () => this.exportContoursSvg());
+        document.getElementById('exportEmbedBtn').addEventListener('click', () => this.exportEmbedPackage());
       }
 
       onResize() {
