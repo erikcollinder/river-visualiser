@@ -3592,6 +3592,19 @@ ${svg}
     const POINT_CLOUD = ${pointCloudData ? JSON.stringify(pointCloudData).replace(/</g, '\\u003c') : 'null'};
     const STATE = ${JSON.stringify(state).replace(/</g, '\\u003c')};
 
+    // --- URL parameter overrides (for iframe embedding) ---
+    const __params = new URLSearchParams(window.location.search);
+    if (__params.has("zoom")) STATE.camera.frustumSize = parseFloat(__params.get("zoom"));
+    if (__params.has("fov")) STATE.camera.fov = parseFloat(__params.get("fov"));
+    if (__params.has("cx")) STATE.camera.position[0] = parseFloat(__params.get("cx"));
+    if (__params.has("cy")) STATE.camera.position[1] = parseFloat(__params.get("cy"));
+    if (__params.has("cz")) STATE.camera.position[2] = parseFloat(__params.get("cz"));
+    if (__params.has("tx")) STATE.camera.target[0] = parseFloat(__params.get("tx"));
+    if (__params.has("ty")) STATE.camera.target[1] = parseFloat(__params.get("ty"));
+    if (__params.has("tz")) STATE.camera.target[2] = parseFloat(__params.get("tz"));
+    if (__params.has("autoRotate")) STATE.camera.autoRotate = __params.get("autoRotate") !== "false";
+    if (__params.has("autoRotateSpeed")) STATE.camera.autoRotateSpeed = parseFloat(__params.get("autoRotateSpeed"));
+
     // --- Helpers ---
     function b64ToFloat32(b64) {
       const bin = atob(b64);
