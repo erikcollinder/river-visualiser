@@ -405,7 +405,7 @@
 
         <div class="control-group">
           <div class="checkbox-group">
-            <input type="checkbox" id="highRes">
+            <input type="checkbox" id="highRes" checked>
             <label for="highRes">High-Res (512)</label>
           </div>
         </div>
@@ -449,39 +449,39 @@
           <div class="control-group">
             <label>Seed</label>
             <div class="row">
-              <input type="number" id="sculpted-seed" value="832570" min="0" max="999999">
+              <input type="number" id="sculpted-seed" value="93661" min="0" max="999999">
               <button id="sculpted-randomize-seed" style="width: auto; padding: 8px 12px;">Random</button>
             </div>
           </div>
 
           <div class="control-group">
-            <label>Height Scale <span class="control-value" id="sculptedHeightScale-value">2.60</span></label>
-            <input type="range" id="sculptedHeightScale" min="0.5" max="6" step="0.1" value="2.6">
+            <label>Height Scale <span class="control-value" id="sculptedHeightScale-value">5.50</span></label>
+            <input type="range" id="sculptedHeightScale" min="0.5" max="6" step="0.1" value="5.5">
           </div>
 
           <div class="control-group">
-            <label>Macro Scale <span class="control-value" id="macroScale-value">0.17</span></label>
-            <input type="range" id="macroScale" min="0.05" max="0.5" step="0.01" value="0.17">
+            <label>Macro Scale <span class="control-value" id="macroScale-value">0.20</span></label>
+            <input type="range" id="macroScale" min="0.05" max="0.5" step="0.01" value="0.2">
           </div>
 
           <div class="control-group">
-            <label>Macro Strength <span class="control-value" id="macroStrength-value">0.60</span></label>
-            <input type="range" id="macroStrength" min="0" max="1" step="0.05" value="0.6">
+            <label>Macro Strength <span class="control-value" id="macroStrength-value">0.90</span></label>
+            <input type="range" id="macroStrength" min="0" max="1" step="0.05" value="0.9">
           </div>
 
           <div class="control-group">
-            <label>Warp Strength <span class="control-value" id="warpStrength-value">0.25</span></label>
-            <input type="range" id="warpStrength" min="0" max="1" step="0.05" value="0.25">
+            <label>Warp Strength <span class="control-value" id="warpStrength-value">0.20</span></label>
+            <input type="range" id="warpStrength" min="0" max="1" step="0.05" value="0.2">
           </div>
 
           <div class="control-group">
-            <label>Ridge Mix <span class="control-value" id="ridgeMix-value">0.10</span></label>
-            <input type="range" id="ridgeMix" min="0" max="1" step="0.05" value="0.1">
+            <label>Ridge Mix <span class="control-value" id="ridgeMix-value">0.70</span></label>
+            <input type="range" id="ridgeMix" min="0" max="1" step="0.05" value="0.7">
           </div>
 
           <div class="control-group">
-            <label>Valley Bias <span class="control-value" id="valleyBias-value">0.42</span></label>
-            <input type="range" id="valleyBias" min="0" max="0.5" step="0.02" value="0.42">
+            <label>Valley Bias <span class="control-value" id="valleyBias-value">0.26</span></label>
+            <input type="range" id="valleyBias" min="0" max="0.5" step="0.02" value="0.26">
           </div>
 
           <div class="control-group">
@@ -490,13 +490,13 @@
           </div>
 
           <div class="control-group">
-            <label>Detail Strength <span class="control-value" id="detailStrength-value">0.26</span></label>
-            <input type="range" id="detailStrength" min="0" max="0.5" step="0.02" value="0.26">
+            <label>Detail Strength <span class="control-value" id="detailStrength-value">0.12</span></label>
+            <input type="range" id="detailStrength" min="0" max="0.5" step="0.02" value="0.12">
           </div>
 
           <div class="control-group">
-            <label>Roughness <span class="control-value" id="roughness-value">0.02</span></label>
-            <input type="range" id="roughness" min="0" max="0.4" step="0.01" value="0.02">
+            <label>Roughness <span class="control-value" id="roughness-value">0.01</span></label>
+            <input type="range" id="roughness" min="0" max="0.4" step="0.01" value="0.01">
           </div>
         </div>
 
@@ -872,8 +872,8 @@
       terrain: {
         mode: 'sculpted',        // 'simplex' | 'sculpted' | 'image'
         size: 20,
-        segments: 256,
-        highRes: false,          // Toggle for 512 segments (4x polygons)
+        segments: 512,
+        highRes: true,           // Toggle for 512 segments (4x polygons)
         heightScale: 2.0,
         noiseScale: 0.5,
         octaves: 6,
@@ -884,16 +884,16 @@
         imageHeightScale: 2.0,   // Height scale for image mode
         // Sculpted mode parameters
         sculpted: {
-          seed: 832570,
-          heightScale: 2.6,
-          macroScale: 0.17,      // Scale of large features (valleys, mountains)
-          macroStrength: 0.6,    // Influence of large features
-          warpStrength: 0.25,    // Domain warping intensity
-          ridgeMix: 0.1,         // Blend between smooth and ridged noise
-          valleyBias: 0.42,      // Push terrain toward valleys
+          seed: 93661,
+          heightScale: 5.5,
+          macroScale: 0.2,       // Scale of large features (valleys, mountains)
+          macroStrength: 0.9,    // Influence of large features
+          warpStrength: 0.2,     // Domain warping intensity
+          ridgeMix: 0.7,         // Blend between smooth and ridged noise
+          valleyBias: 0.26,      // Push terrain toward valleys
           detailScale: 0.6,      // Scale of fine detail
-          detailStrength: 0.26,  // Influence of fine detail
-          roughness: 0.02        // High-frequency surface bumpiness
+          detailStrength: 0.12,  // Influence of fine detail
+          roughness: 0.01        // High-frequency surface bumpiness
         },
         // Post-processing (levels)
         levelFloor: 0.15,        // Clamp heights below this (normalized 0-1)
