@@ -806,12 +806,13 @@
       </div>
     </div>
 
-    <div class="section" data-section="export">
+    <div class="section collapsed" data-section="export">
       <div class="section-header">Export</div>
       <div class="section-content">
         <p class="export-note">
-          Export the current contour view as a static figure. SVG keeps only the contour linework.
-          Embed HTML is a self-contained package that can drop into a static site or iframe.
+          SVG exports contour linework only. Embed HTML wraps that SVG for static sites.
+          Interactive HTML bakes the full 3D scene (geometry, shaders, contours) into a single
+          self-contained file with orbit controls — no generation code shipped.
         </p>
 
         <div class="row">
@@ -833,9 +834,17 @@
           </div>
         </div>
 
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="exportOcclusion" checked>
+            <label for="exportOcclusion">Hide Occluded Lines</label>
+          </div>
+        </div>
+
         <div class="row">
           <button id="exportSvgBtn">Download SVG</button>
           <button id="exportEmbedBtn">Download Embed HTML</button>
+          <button id="exportInteractiveBtn">Download Interactive HTML</button>
         </div>
 
         <div id="export-status" class="export-status">Ready to export the current contour view.</div>
@@ -2684,6 +2693,7 @@
         const widthInput = document.getElementById('exportWidth');
         const heightInput = document.getElementById('exportHeight');
         const transparentBackground = document.getElementById('exportTransparentBg').checked;
+        const hideOccludedContours = document.getElementById('exportOcclusion').checked;
 
         const width = Math.max(200, parseInt(widthInput.value, 10) || window.innerWidth);
         const height = Math.max(200, parseInt(heightInput.value, 10) || window.innerHeight);
@@ -2691,7 +2701,7 @@
         widthInput.value = width;
         heightInput.value = height;
 
-        return { width, height, transparentBackground };
+        return { width, height, transparentBackground, hideOccludedContours };
       }
 
       getExportBaseName() {
@@ -2755,6 +2765,280 @@
         return exportCamera;
       }
 
+      projectWorldPoint(x, y, z, camera, width, height) {
+        const projected = new THREE.Vector3(x, y, z).project(camera);
+        return {
+          x: (projected.x + 1) * 0.5 * width,
+          y: (1 - projected.y) * 0.5 * height,
+          depth: projected.z * 0.5 + 0.5,
+          ndcZ: projected.z
+        };
+      }
+
+      unpackDepthSample(r, g, b, a) {
+        const unpackDownscale = 255 / 256;
+        return (r / 255) * (unpackDownscale / (256 * 256 * 256)) +
+               (g / 255) * (unpackDownscale / (256 * 256)) +
+               (b / 255) * (unpackDownscale / 256) +
+               (a / 255) * unpackDownscale;
+      }
+
+      renderTerrainDepthMap(width, height, camera) {
+        const renderTarget = new THREE.WebGLRenderTarget(width, height, {
+          depthBuffer: true,
+          stencilBuffer: false
+        });
+        renderTarget.texture.minFilter = THREE.NearestFilter;
+        renderTarget.texture.magFilter = THREE.NearestFilter;
+
+        const depthMaterial = new THREE.ShaderMaterial({
+          uniforms: {
+            clipNorth: { value: CONFIG.terrain.clipNorth },
+            clipEast: { value: CONFIG.terrain.clipEast },
+            clipSouth: { value: CONFIG.terrain.clipSouth },
+            clipWest: { value: CONFIG.terrain.clipWest },
+            terrainSize: { value: CONFIG.terrain.size }
+          },
+          vertexShader: `
+            varying vec3 vWorldPosition;
+
+            void main() {
+              vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+              vWorldPosition = worldPosition.xyz;
+              gl_Position = projectionMatrix * viewMatrix * worldPosition;
+            }
+          `,
+          fragmentShader: `
+            uniform float clipNorth;
+            uniform float clipEast;
+            uniform float clipSouth;
+            uniform float clipWest;
+            uniform float terrainSize;
+
+            varying vec3 vWorldPosition;
+
+            vec4 packDepthToRGBA(const in float v) {
+              const vec4 bitShift = vec4(256.0 * 256.0 * 256.0, 256.0 * 256.0, 256.0, 1.0);
+              const vec4 bitMask = vec4(0.0, 1.0 / 256.0, 1.0 / 256.0, 1.0 / 256.0);
+              vec4 rgba = fract(v * bitShift);
+              rgba -= rgba.xxyz * bitMask;
+              return rgba;
+            }
+
+            void main() {
+              float halfSize = terrainSize * 0.5;
+              if (vWorldPosition.z > (halfSize - clipNorth * terrainSize)) discard;
+              if (vWorldPosition.z < -(halfSize - clipSouth * terrainSize)) discard;
+              if (vWorldPosition.x > (halfSize - clipEast * terrainSize)) discard;
+              if (vWorldPosition.x < -(halfSize - clipWest * terrainSize)) discard;
+              gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
+            }
+          `,
+          side: THREE.DoubleSide,
+          depthWrite: true,
+          depthTest: true
+        });
+
+        const depthMesh = new THREE.Mesh(this.terrainMesh.geometry, depthMaterial);
+        depthMesh.matrixAutoUpdate = false;
+        depthMesh.matrix.copy(this.terrainMesh.mesh.matrixWorld);
+        depthMesh.matrixWorld.copy(this.terrainMesh.mesh.matrixWorld);
+        depthMesh.frustumCulled = false;
+
+        const depthScene = new THREE.Scene();
+        depthScene.add(depthMesh);
+
+        const oldRenderTarget = this.renderer.getRenderTarget();
+        const oldClearColor = this.renderer.getClearColor(new THREE.Color()).clone();
+        const oldClearAlpha = this.renderer.getClearAlpha();
+        const oldAutoClear = this.renderer.autoClear;
+        const oldViewport = new THREE.Vector4();
+        const oldScissor = new THREE.Vector4();
+        this.renderer.getViewport(oldViewport);
+        this.renderer.getScissor(oldScissor);
+        const oldScissorTest = this.renderer.getScissorTest();
+
+        this.renderer.setRenderTarget(renderTarget);
+        this.renderer.autoClear = true;
+        this.renderer.setViewport(0, 0, width, height);
+        this.renderer.setScissorTest(false);
+        this.renderer.setClearColor(0xffffff, 1);
+        this.renderer.clear(true, true, true);
+        this.renderer.render(depthScene, camera);
+
+        const pixels = new Uint8Array(width * height * 4);
+        this.renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, pixels);
+
+        this.renderer.setRenderTarget(oldRenderTarget);
+        this.renderer.setViewport(oldViewport);
+        this.renderer.setScissor(oldScissor);
+        this.renderer.setScissorTest(oldScissorTest);
+        this.renderer.setClearColor(oldClearColor, oldClearAlpha);
+        this.renderer.autoClear = oldAutoClear;
+
+        depthMaterial.dispose();
+        renderTarget.dispose();
+
+        return { width, height, pixels };
+      }
+
+      sampleTerrainDepth(depthMap, x, y) {
+        const pixelX = Math.max(0, Math.min(depthMap.width - 1, Math.round(x)));
+        const pixelY = Math.max(0, Math.min(depthMap.height - 1, Math.round(y)));
+        const flippedY = depthMap.height - 1 - pixelY;
+        const index = (flippedY * depthMap.width + pixelX) * 4;
+
+        return this.unpackDepthSample(
+          depthMap.pixels[index],
+          depthMap.pixels[index + 1],
+          depthMap.pixels[index + 2],
+          depthMap.pixels[index + 3]
+        );
+      }
+
+      isContourSampleVisible(projected, depthMap) {
+        if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.depth)) {
+          return false;
+        }
+
+        if (projected.ndcZ < -1 || projected.ndcZ > 1) {
+          return false;
+        }
+
+        if (projected.x < 0 || projected.x > depthMap.width || projected.y < 0 || projected.y > depthMap.height) {
+          return false;
+        }
+
+        const terrainDepth = this.sampleTerrainDepth(depthMap, projected.x, projected.y);
+        return projected.depth <= terrainDepth + 0.0025;
+      }
+
+      interpolateWorldPoint(start, end, t) {
+        return {
+          x: start.x + (end.x - start.x) * t,
+          y: start.y + (end.y - start.y) * t,
+          z: start.z + (end.z - start.z) * t
+        };
+      }
+
+      addScreenPoint(points, point) {
+        if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+
+        const entry = {
+          x: point.x.toFixed(2),
+          y: point.y.toFixed(2)
+        };
+
+        const last = points[points.length - 1];
+        if (last && last.x === entry.x && last.y === entry.y) {
+          return;
+        }
+
+        points.push(entry);
+      }
+
+      findVisibilityBoundary(start, end, startVisible, camera, width, height, depthMap) {
+        let low = 0;
+        let high = 1;
+        let best = null;
+
+        for (let i = 0; i < 8; i++) {
+          const mid = (low + high) * 0.5;
+          const world = this.interpolateWorldPoint(start, end, mid);
+          const projected = this.projectWorldPoint(world.x, world.y, world.z, camera, width, height);
+          const visible = this.isContourSampleVisible(projected, depthMap);
+          best = projected;
+
+          if (visible === startVisible) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+
+        return best;
+      }
+
+      buildVisiblePolylineRuns(segment, camera, width, height, depthMap) {
+        const runs = [];
+        let currentRun = [];
+        let previousSample = null;
+        let previousVisible = false;
+
+        for (let i = 0; i < segment.positions.length - 3; i += 3) {
+          const start = {
+            x: segment.positions[i],
+            y: segment.positions[i + 1],
+            z: segment.positions[i + 2]
+          };
+          const end = {
+            x: segment.positions[i + 3],
+            y: segment.positions[i + 4],
+            z: segment.positions[i + 5]
+          };
+
+          const startProjected = this.projectWorldPoint(start.x, start.y, start.z, camera, width, height);
+          const endProjected = this.projectWorldPoint(end.x, end.y, end.z, camera, width, height);
+          const screenDistance = Math.hypot(endProjected.x - startProjected.x, endProjected.y - startProjected.y);
+          const steps = Math.max(1, Math.ceil(screenDistance / 2));
+
+          for (let step = 0; step <= steps; step++) {
+            if (i > 0 && step === 0) continue;
+
+            const t = step / steps;
+            const world = this.interpolateWorldPoint(start, end, t);
+            const projected = this.projectWorldPoint(world.x, world.y, world.z, camera, width, height);
+            const visible = this.isContourSampleVisible(projected, depthMap);
+
+            if (previousSample === null) {
+              if (visible) {
+                this.addScreenPoint(currentRun, projected);
+              }
+              previousSample = { world };
+              previousVisible = visible;
+              continue;
+            }
+
+            if (visible === previousVisible) {
+              if (visible) {
+                this.addScreenPoint(currentRun, projected);
+              }
+            } else {
+              const boundary = this.findVisibilityBoundary(
+                previousSample.world,
+                world,
+                previousVisible,
+                camera,
+                width,
+                height,
+                depthMap
+              );
+
+              if (previousVisible) {
+                this.addScreenPoint(currentRun, boundary);
+                if (currentRun.length >= 2) {
+                  runs.push(currentRun);
+                }
+                currentRun = [];
+              } else {
+                currentRun = [];
+                this.addScreenPoint(currentRun, boundary);
+                this.addScreenPoint(currentRun, projected);
+              }
+            }
+
+            previousSample = { world };
+            previousVisible = visible;
+          }
+        }
+
+        if (previousVisible && currentRun.length >= 2) {
+          runs.push(currentRun);
+        }
+
+        return runs;
+      }
+
       getSvgStrokeColor(segment, useTerrain, solidColor) {
         if (!useTerrain || !segment.colors || segment.colors.length === 0) {
           return solidColor.getStyle();
@@ -2774,7 +3058,7 @@
         return `rgb(${Math.round(r / count * 255)}, ${Math.round(g / count * 255)}, ${Math.round(b / count * 255)})`;
       }
 
-      buildContourSvg({ width, height, transparentBackground }) {
+      buildContourSvg({ width, height, transparentBackground, hideOccludedContours }) {
         if (!CONFIG.contours.enabled) {
           throw new Error('Enable contours before exporting.');
         }
@@ -2785,36 +3069,36 @@
         }
 
         const exportCamera = this.buildExportCamera(width, height);
-        const vector = new THREE.Vector3();
         const widthScale = width / window.innerWidth;
         const heightScale = height / window.innerHeight;
         const svgLineWidth = Math.max(0.5, lineWidth * ((widthScale + heightScale) * 0.5));
         const polylineMarkup = [];
+        const depthMap = hideOccludedContours ? this.renderTerrainDepthMap(width, height, exportCamera) : null;
 
         segments.forEach(segment => {
-          const points = [];
+          const runs = hideOccludedContours
+            ? this.buildVisiblePolylineRuns(segment, exportCamera, width, height, depthMap)
+            : [segment.positions.reduce((points, _, index) => {
+                if (index % 3 !== 0) return points;
+                const projected = this.projectWorldPoint(
+                  segment.positions[index],
+                  segment.positions[index + 1],
+                  segment.positions[index + 2],
+                  exportCamera,
+                  width,
+                  height
+                );
+                this.addScreenPoint(points, projected);
+                return points;
+              }, [])];
 
-          for (let i = 0; i < segment.positions.length; i += 3) {
-            vector.set(
-              segment.positions[i],
-              segment.positions[i + 1],
-              segment.positions[i + 2]
-            ).project(exportCamera);
+          runs.forEach(run => {
+            if (run.length < 2) return;
 
-            if (!Number.isFinite(vector.x) || !Number.isFinite(vector.y)) {
-              continue;
-            }
-
-            const x = ((vector.x + 1) * 0.5 * width).toFixed(2);
-            const y = ((1 - vector.y) * 0.5 * height).toFixed(2);
-            points.push(`${x},${y}`);
-          }
-
-          if (points.length < 2) return;
-
-          polylineMarkup.push(
-            `<polyline points="${points.join(' ')}" fill="none" stroke="${this.getSvgStrokeColor(segment, useTerrain, solidColor)}" stroke-width="${svgLineWidth.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${CONFIG.contours.opacity.toFixed(2)}"/>`
-          );
+            polylineMarkup.push(
+              `<polyline points="${run.map(point => `${point.x},${point.y}`).join(' ')}" fill="none" stroke="${this.getSvgStrokeColor(segment, useTerrain, solidColor)}" stroke-width="${svgLineWidth.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${CONFIG.contours.opacity.toFixed(2)}"/>`
+            );
+          });
         });
 
         if (polylineMarkup.length === 0) {
@@ -2827,6 +3111,7 @@
           width,
           height,
           transparentBackground,
+          hideOccludedContours,
           segmentCount: polylineMarkup.length,
           camera: {
             mode: this.cameraController.getActiveCamera().isOrthographicCamera ? 'orthographic' : 'perspective',
@@ -2911,6 +3196,661 @@ ${svg}
         } catch (error) {
           this.setExportStatus(error.message, true);
         }
+      }
+
+      // ============================================
+      // Interactive HTML Export
+      // ============================================
+
+      bakeHeightData() {
+        // Encode heights as 16-bit values in the RG channels of a PNG
+        // R = high byte, G = low byte → 65536 levels of precision
+        const data = this.heightmap.data;
+        const segments = this.heightmap.segments;
+        const side = segments + 1;
+        const minH = this.heightmap.minHeight;
+        const maxH = this.heightmap.maxHeight;
+        const range = maxH - minH || 1;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = side;
+        canvas.height = side;
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.createImageData(side, side);
+        const pixels = imageData.data;
+
+        for (let i = 0; i < data.length; i++) {
+          const normalized = (data[i] - minH) / range; // 0–1
+          const quantized = Math.round(normalized * 65535);
+          const hi = (quantized >> 8) & 0xFF;
+          const lo = quantized & 0xFF;
+
+          pixels[i * 4] = hi;      // R = high byte
+          pixels[i * 4 + 1] = lo;  // G = low byte
+          pixels[i * 4 + 2] = 0;   // B unused
+          pixels[i * 4 + 3] = 255; // A opaque
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        return canvas.toDataURL('image/png');
+      }
+
+      bakeColorTexture() {
+        // Convert the DataTexture to a PNG data URL via canvas
+        const tex = this.colorPlane.getTexture();
+        if (!tex || !tex.image) return null;
+
+        const texData = tex.image.data;
+        const w = tex.image.width;
+        const h = tex.image.height;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.createImageData(w, h);
+        imageData.data.set(texData);
+        ctx.putImageData(imageData, 0, 0);
+
+        return canvas.toDataURL('image/png');
+      }
+
+      bakeContourData() {
+        if (!CONFIG.contours.enabled) return null;
+
+        const { segments, useTerrain, solidColor, lineWidth } = this.contourLayer.buildRenderableSegments();
+        if (segments.length === 0) return null;
+
+        // Quantize positions to Float32 (they already are, but we strip to a compact format)
+        // Each segment: { p: base64 Float32Array of positions, c: base64 Float32Array of colors (if terrain) }
+        const bakedSegments = segments.map(seg => {
+          const entry = {
+            p: this.uint8ToBase64(new Uint8Array(new Float32Array(seg.positions).buffer))
+          };
+          if (useTerrain && seg.colors && seg.colors.length > 0) {
+            entry.c = this.uint8ToBase64(new Uint8Array(new Float32Array(seg.colors).buffer));
+          }
+          return entry;
+        });
+
+        return {
+          segments: bakedSegments,
+          useTerrain,
+          solidColor: '#' + solidColor.getHexString(),
+          lineWidth,
+          opacity: CONFIG.contours.opacity
+        };
+      }
+
+      captureSceneState() {
+        const camera = this.cameraController.getActiveCamera();
+        const isOrtho = camera.isOrthographicCamera;
+
+        return {
+          terrain: {
+            size: this.heightmap.size,
+            segments: this.heightmap.segments,
+            minHeight: this.heightmap.minHeight,
+            maxHeight: this.heightmap.maxHeight
+          },
+          background: CONFIG.scene.backgroundColor,
+          camera: {
+            isOrtho,
+            position: camera.position.toArray(),
+            target: this.cameraController.controls.target.toArray(),
+            frustumSize: isOrtho ? (camera.top - camera.bottom) : null,
+            fov: !isOrtho ? camera.fov : null,
+            near: camera.near,
+            far: camera.far,
+            autoRotate: CONFIG.camera.autoRotate,
+            autoRotateSpeed: CONFIG.camera.rotateSpeed
+          },
+          mattSurface: {
+            visible: CONFIG.surface.enabled,
+            mode: CONFIG.surface.mode,
+            colorMode: CONFIG.color.mode,
+            reliefShading: CONFIG.surface.reliefShading,
+            opacity: CONFIG.surface.opacity,
+            iridescent: structuredClone(CONFIG.color.iridescent),
+            pointSize: CONFIG.surface.pointSize,
+            gridScale: CONFIG.surface.gridScale
+          },
+          metallicSurface: {
+            visible: CONFIG.surface.metallicShading,
+            ...structuredClone(CONFIG.surface.metallic)
+          },
+          clipping: {
+            north: CONFIG.terrain.clipNorth,
+            east: CONFIG.terrain.clipEast,
+            south: CONFIG.terrain.clipSouth,
+            west: CONFIG.terrain.clipWest
+          }
+        };
+      }
+
+      uint8ToBase64(uint8Array) {
+        let binary = '';
+        const len = uint8Array.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(uint8Array[i]);
+        }
+        return btoa(binary);
+      }
+
+      exportInteractiveHtml() {
+        try {
+          this.setExportStatus('Building interactive export...');
+
+          const heightTexDataUrl = this.bakeHeightData();
+          const colorTexDataUrl = this.bakeColorTexture();
+          const contourData = this.bakeContourData();
+          const state = this.captureSceneState();
+
+          const hasContent = state.mattSurface.visible || state.metallicSurface.visible ||
+            (contourData && contourData.segments.length > 0);
+          if (!hasContent) {
+            throw new Error('Nothing visible to export. Enable at least one surface or contours.');
+          }
+
+          // Bake point cloud data if in pointGrid mode
+          let pointCloudData = null;
+          if (state.mattSurface.visible && state.mattSurface.mode === 'pointGrid' && this.terrainMesh.pointsGeometry) {
+            const posArr = this.terrainMesh.pointsGeometry.attributes.position.array;
+            const colArr = this.terrainMesh.pointsGeometry.attributes.color.array;
+            pointCloudData = {
+              positions: this.uint8ToBase64(new Uint8Array(posArr.buffer, posArr.byteOffset, posArr.byteLength)),
+              colors: this.uint8ToBase64(new Uint8Array(colArr.buffer, colArr.byteOffset, colArr.byteLength))
+            };
+          }
+
+          const html = this.buildInteractiveHtmlPackage(heightTexDataUrl, colorTexDataUrl, contourData, pointCloudData, state);
+
+          this.downloadFile(`${this.getExportBaseName()}-interactive.html`, html, 'text/html;charset=utf-8');
+
+          // Report approximate size
+          const sizeKB = Math.round(new Blob([html]).size / 1024);
+          this.setExportStatus(`Downloaded interactive HTML (${sizeKB} KB).`);
+        } catch (error) {
+          this.setExportStatus(error.message, true);
+        }
+      }
+
+      buildInteractiveHtmlPackage(heightTexDataUrl, colorTexDataUrl, contourData, pointCloudData, state) {
+        const s = state;
+        const needsContours = contourData && contourData.segments.length > 0;
+        const needsMatt = s.mattSurface.visible && s.mattSurface.mode !== 'pointGrid' && s.mattSurface.mode !== 'background';
+        const needsBackground = s.mattSurface.visible && s.mattSurface.mode === 'background';
+        const needsMetallic = s.metallicSurface.visible;
+        const needsPoints = s.mattSurface.visible && s.mattSurface.mode === 'pointGrid' && pointCloudData;
+        const isIridescent = s.mattSurface.colorMode === 'iridescent';
+
+        // Only import Line2 etc if we have contours
+        const lineImports = needsContours ? `
+    import { Line2 } from 'three/addons/lines/Line2.js';
+    import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+    import { LineGeometry } from 'three/addons/lines/LineGeometry.js';` : '';
+
+        // Build the terrain shader — stripped of iridescent code if not needed
+        const terrainVertexShader = `
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            varying float vHeight;
+            uniform float minHeight;
+            uniform float maxHeight;
+            void main() {
+              vUv = uv;
+              vNormal = normalize(normalMatrix * normal);
+              vPosition = position;
+              vHeight = (position.y - minHeight) / (maxHeight - minHeight + 0.001);
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }`;
+
+        const terrainFragmentShader = `
+            uniform sampler2D colorMap;
+            uniform float reliefShading;
+            uniform vec3 lightDir;
+            uniform float opacity;
+            uniform int colorMode;
+            ${isIridescent ? `
+            uniform float u_time;
+            uniform float iridSpeed;
+            uniform float iridScale;
+            uniform float iridIntensity;
+            uniform float iridBaseHue;` : ''}
+            uniform float clipNorth;
+            uniform float clipEast;
+            uniform float clipSouth;
+            uniform float clipWest;
+            uniform float terrainSize;
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            varying float vHeight;
+            ${isIridescent ? `
+            vec3 hsv2rgb(vec3 c) {
+              vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+              vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+              return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+            }
+            vec3 mod289(vec3 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+            vec2 mod289(vec2 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+            vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+            float snoise(vec2 v) {
+              const vec4 C = vec4(0.211324865405187,0.366025403784439,-0.577350269189626,0.024390243902439);
+              vec2 i = floor(v + dot(v, C.yy));
+              vec2 x0 = v - i + dot(i, C.xx);
+              vec2 i1 = (x0.x > x0.y) ? vec2(1.0,0.0) : vec2(0.0,1.0);
+              vec4 x12 = x0.xyxy + C.xxzz;
+              x12.xy -= i1;
+              i = mod289(i);
+              vec3 p = permute(permute(i.y + vec3(0.0,i1.y,1.0)) + i.x + vec3(0.0,i1.x,1.0));
+              vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+              m = m*m; m = m*m;
+              vec3 x = 2.0*fract(p*C.www)-1.0;
+              vec3 h = abs(x)-0.5;
+              vec3 ox = floor(x+0.5);
+              vec3 a0 = x-ox;
+              m *= 1.79284291400159 - 0.85373472095314*(a0*a0+h*h);
+              vec3 g;
+              g.x = a0.x*x0.x + h.x*x0.y;
+              g.yz = a0.yz*x12.xz + h.yz*x12.yw;
+              return 130.0*dot(m,g);
+            }
+            vec3 iridescent(vec2 uv, float height, float time) {
+              float angle = atan(uv.y - 0.5, uv.x - 0.5);
+              float dist = length(uv - 0.5);
+              float phase = height * iridScale + angle * 0.3 + dist * 2.0 + time * iridSpeed;
+              float hue = fract(phase + iridBaseHue);
+              return hsv2rgb(vec3(hue, iridIntensity, 0.9 + height * 0.1));
+            }` : ''}
+            void main() {
+              float halfSize = terrainSize * 0.5;
+              if (vPosition.z > (halfSize - clipNorth * terrainSize)) discard;
+              if (vPosition.z < -(halfSize - clipSouth * terrainSize)) discard;
+              if (vPosition.x > (halfSize - clipEast * terrainSize)) discard;
+              if (vPosition.x < -(halfSize - clipWest * terrainSize)) discard;
+              vec3 baseColor;
+              ${isIridescent ? `
+              if (colorMode == 2) {
+                baseColor = iridescent(vUv, vHeight, u_time);
+              } else {` : ''}
+                vec4 texColor = texture2D(colorMap, vUv);
+                baseColor = texColor.rgb;
+              ${isIridescent ? '}' : ''}
+              float ambient = 0.4;
+              float diffuse = max(dot(vNormal, lightDir), 0.0);
+              float shade = mix(1.0, ambient + (1.0 - ambient) * diffuse, reliefShading);
+              gl_FragColor = vec4(baseColor * shade, opacity);
+            }`;
+
+        const metallicVertexShader = `
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            void main() {
+              vNormal = normalize(normalMatrix * normal);
+              vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }`;
+
+        const metallicFragmentShader = `
+            uniform vec3 lightDir;
+            uniform vec3 u_cameraPos;
+            uniform vec3 baseColor;
+            uniform float baseBrightness;
+            uniform float shadowLift;
+            uniform float shininess;
+            uniform float edgeSharpness;
+            uniform float edgeBrightness;
+            uniform float iridescence;
+            uniform float opacity;
+            uniform float clipNorth;
+            uniform float clipEast;
+            uniform float clipSouth;
+            uniform float clipWest;
+            uniform float terrainSize;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            vec3 hsv2rgb(vec3 c) {
+              vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+              vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+              return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+            }
+            float fresnel(vec3 viewDir, vec3 normal) {
+              float cosTheta = max(dot(viewDir, normal), 0.0);
+              return 0.04 + 0.96 * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+            }
+            vec3 iridescenceShimmer(vec3 viewDir, vec3 normal) {
+              float angle = acos(clamp(dot(viewDir, normal), 0.0, 1.0));
+              return hsv2rgb(vec3(fract(angle * 2.5), 0.8, 1.0));
+            }
+            void main() {
+              float halfSize = terrainSize * 0.5;
+              if (vPosition.z > (halfSize - clipNorth * terrainSize)) discard;
+              if (vPosition.z < -(halfSize - clipSouth * terrainSize)) discard;
+              if (vPosition.x > (halfSize - clipEast * terrainSize)) discard;
+              if (vPosition.x < -(halfSize - clipWest * terrainSize)) discard;
+              vec3 normal = normalize(vNormal);
+              vec3 viewDir = normalize(u_cameraPos - vPosition);
+              float diffuse = max(dot(normal, lightDir), 0.0);
+              vec3 terrainColor = vec3(baseBrightness) * (shadowLift + (1.0 - shadowLift) * diffuse);
+              vec3 crystalColor = baseColor * (0.5 + 0.5 * diffuse);
+              vec3 halfDir = normalize(viewDir + lightDir);
+              float NdotH = max(dot(normal, halfDir), 0.0);
+              float spec = pow(NdotH, shininess * 50.0);
+              vec3 specularColor = vec3(spec) * 2.0;
+              float edgeFactor = pow(1.0 - abs(dot(viewDir, normal)), edgeSharpness);
+              vec3 edgeGlow = vec3(1.0) * edgeFactor * edgeBrightness;
+              float rim = fresnel(viewDir, normal);
+              vec3 iridColor = iridescenceShimmer(viewDir, normal);
+              vec3 iridContribution = iridColor * iridescence * rim * edgeFactor;
+              vec3 metallicEffects = crystalColor + specularColor + edgeGlow + iridContribution;
+              gl_FragColor = vec4(mix(terrainColor, metallicEffects, opacity), 1.0);
+            }`;
+
+        const colorModeInt = { 'height': 0, 'slope': 1, 'iridescent': 2 }[s.mattSurface.colorMode] || 0;
+
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Landscape — Interactive Embed</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;overflow:hidden;background:${s.background}}
+    canvas{display:block;width:100%;height:100%}
+  </style>
+</head>
+<body>
+  <${''}script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </${''}script>
+  <${''}script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';${lineImports}
+
+    // --- Baked data ---
+    const HEIGHT_TEX_URL = "${heightTexDataUrl}";
+    const COLOR_TEX_URL = ${colorTexDataUrl ? `"${colorTexDataUrl}"` : 'null'};
+    const CONTOUR_DATA = ${contourData ? JSON.stringify(contourData).replace(/</g, '\\u003c') : 'null'};
+    const POINT_CLOUD = ${pointCloudData ? JSON.stringify(pointCloudData).replace(/</g, '\\u003c') : 'null'};
+    const STATE = ${JSON.stringify(state).replace(/</g, '\\u003c')};
+
+    // --- Helpers ---
+    function b64ToFloat32(b64) {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Float32Array(bytes.buffer);
+    }
+
+    function loadImage(url) {
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.src = url;
+      });
+    }
+
+    // --- Scene setup ---
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(STATE.background);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+    // --- Camera ---
+    const aspect = window.innerWidth / window.innerHeight;
+    const cam = STATE.camera;
+    let camera;
+    if (cam.isOrtho) {
+      const hh = cam.frustumSize * 0.5;
+      const hw = hh * aspect;
+      camera = new THREE.OrthographicCamera(-hw, hw, hh, -hh, cam.near, cam.far);
+    } else {
+      camera = new THREE.PerspectiveCamera(cam.fov, aspect, cam.near, cam.far);
+    }
+    camera.position.fromArray(cam.position);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.fromArray(cam.target);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 - 0.1;
+    controls.autoRotate = cam.autoRotate;
+    controls.autoRotateSpeed = cam.autoRotateSpeed;
+    controls.update();
+
+    // --- Decode heightmap from PNG (16-bit RG encoding) ---
+    const T = STATE.terrain;
+    const side = T.segments + 1;
+    const heightImg = await loadImage(HEIGHT_TEX_URL);
+    const hCanvas = document.createElement('canvas');
+    hCanvas.width = side;
+    hCanvas.height = side;
+    const hCtx = hCanvas.getContext('2d');
+    hCtx.drawImage(heightImg, 0, 0);
+    const hPixels = hCtx.getImageData(0, 0, side, side).data;
+
+    // Reconstruct terrain geometry
+    const geometry = new THREE.PlaneGeometry(T.size, T.size, T.segments, T.segments);
+    geometry.rotateX(-Math.PI / 2);
+    const pos = geometry.attributes.position.array;
+    for (let i = 0; i < pos.length; i += 3) {
+      const gx = Math.round(((pos[i] / T.size) + 0.5) * T.segments);
+      const gz = Math.round(((pos[i + 2] / T.size) + 0.5) * T.segments);
+      const pIdx = (gz * side + gx) * 4;
+      const normalized = (hPixels[pIdx] * 256 + hPixels[pIdx + 1]) / 65535;
+      pos[i + 1] = normalized * (T.maxHeight - T.minHeight) + T.minHeight;
+    }
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();
+
+    // --- Load color texture ---
+    const colorTex = await (async () => {
+      if (!COLOR_TEX_URL) return null;
+      const img = await loadImage(COLOR_TEX_URL);
+      const tex = new THREE.Texture(img);
+      tex.colorSpace = THREE.LinearSRGBColorSpace;
+      tex.flipY = true;
+      tex.magFilter = THREE.LinearFilter;
+      tex.minFilter = THREE.LinearFilter;
+      tex.needsUpdate = true;
+      return tex;
+    })();
+    const frameCallbacks = [];
+
+    // --- Matt surface ---
+    ${needsMatt ? `{
+      const MS = STATE.mattSurface;
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          colorMap: { value: colorTex },
+          reliefShading: { value: MS.reliefShading ? 1.0 : 0.0 },
+          lightDir: { value: new THREE.Vector3(-1, 1, -1).normalize() },
+          opacity: { value: MS.opacity },
+          colorMode: { value: ${colorModeInt} },
+          ${isIridescent ? `u_time: { value: 0.0 },
+          iridSpeed: { value: ${s.mattSurface.iridescent.speed} },
+          iridScale: { value: ${s.mattSurface.iridescent.scale} },
+          iridIntensity: { value: ${s.mattSurface.iridescent.intensity} },
+          iridBaseHue: { value: ${s.mattSurface.iridescent.baseHue} },` : ''}
+          minHeight: { value: ${s.terrain.minHeight} },
+          maxHeight: { value: ${s.terrain.maxHeight} },
+          clipNorth: { value: ${s.clipping.north} },
+          clipEast: { value: ${s.clipping.east} },
+          clipSouth: { value: ${s.clipping.south} },
+          clipWest: { value: ${s.clipping.west} },
+          terrainSize: { value: ${s.terrain.size} }
+        },
+        vertexShader: \`${terrainVertexShader}\`,
+        fragmentShader: \`${terrainFragmentShader}\`,
+        transparent: true,
+        depthWrite: true,
+        side: THREE.DoubleSide
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.material.wireframe = ${s.mattSurface.mode === 'wireframe'};
+      scene.add(mesh);
+      ${isIridescent ? `
+      const clock = new THREE.Clock();
+      frameCallbacks.push(() => {
+        material.uniforms.u_time.value = clock.getElapsedTime();
+      });` : ''}
+    }` : '// Matt surface not active'}
+
+    // --- Background depth surface ---
+    ${needsBackground ? `{
+      const bgMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(STATE.background),
+        side: THREE.DoubleSide,
+        depthWrite: true,
+        depthTest: true
+      });
+      scene.add(new THREE.Mesh(geometry, bgMat));
+    }` : '// Background surface not needed'}
+
+    // --- Metallic surface ---
+    ${needsMetallic ? `{
+      const metallicMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          lightDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
+          u_cameraPos: { value: new THREE.Vector3() },
+          baseColor: { value: new THREE.Color(0.92, 0.95, 1.0) },
+          baseBrightness: { value: ${s.metallicSurface.baseBrightness} },
+          shadowLift: { value: ${s.metallicSurface.shadowLift} },
+          shininess: { value: ${s.metallicSurface.shininess} },
+          edgeSharpness: { value: ${s.metallicSurface.edgeSharpness} },
+          edgeBrightness: { value: ${s.metallicSurface.edgeBrightness} },
+          iridescence: { value: ${s.metallicSurface.iridescence} },
+          opacity: { value: ${s.metallicSurface.opacity} },
+          clipNorth: { value: ${s.clipping.north} },
+          clipEast: { value: ${s.clipping.east} },
+          clipSouth: { value: ${s.clipping.south} },
+          clipWest: { value: ${s.clipping.west} },
+          terrainSize: { value: ${s.terrain.size} }
+        },
+        vertexShader: \`${metallicVertexShader}\`,
+        fragmentShader: \`${metallicFragmentShader}\`,
+        transparent: false,
+        side: THREE.DoubleSide,
+        depthWrite: true,
+        depthTest: true
+      });
+      const metallicMesh = new THREE.Mesh(geometry, metallicMaterial);
+      metallicMesh.position.y = 0.01;
+      metallicMesh.renderOrder = 999;
+      metallicMesh.frustumCulled = false;
+      scene.add(metallicMesh);
+      frameCallbacks.push(() => {
+        metallicMaterial.uniforms.u_cameraPos.value.copy(camera.position);
+      });
+    }` : '// Metallic surface not active'}
+
+    // --- Point cloud ---
+    ${needsPoints ? `{
+      const pcPositions = b64ToFloat32(POINT_CLOUD.positions);
+      const pcColors = b64ToFloat32(POINT_CLOUD.colors);
+      const pcGeom = new THREE.BufferGeometry();
+      pcGeom.setAttribute('position', new THREE.Float32BufferAttribute(pcPositions, 3));
+      pcGeom.setAttribute('color', new THREE.Float32BufferAttribute(pcColors, 3));
+      const pcMat = new THREE.PointsMaterial({
+        size: ${s.mattSurface.pointSize},
+        vertexColors: true,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: ${s.mattSurface.opacity}
+      });
+      scene.add(new THREE.Points(pcGeom, pcMat));
+    }` : '// Point cloud not active'}
+
+    // --- Contour lines ---
+    ${needsContours ? `{
+      const CD = CONTOUR_DATA;
+      const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+      const solidColor = new THREE.Color(CD.solidColor);
+
+      CD.segments.forEach(seg => {
+        const positions = b64ToFloat32(seg.p);
+        if (positions.length < 6) return;
+
+        const lineGeom = new LineGeometry();
+        lineGeom.setPositions(Array.from(positions));
+
+        let mat;
+        if (CD.useTerrain && seg.c) {
+          const colors = b64ToFloat32(seg.c);
+          lineGeom.setColors(Array.from(colors));
+          mat = new LineMaterial({
+            vertexColors: true,
+            opacity: CD.opacity,
+            transparent: true,
+            linewidth: CD.lineWidth,
+            alphaToCoverage: false
+          });
+        } else {
+          mat = new LineMaterial({
+            color: solidColor,
+            opacity: CD.opacity,
+            transparent: true,
+            linewidth: CD.lineWidth,
+            alphaToCoverage: false
+          });
+        }
+        mat.resolution.copy(resolution);
+
+        const line = new Line2(lineGeom, mat);
+        line.computeLineDistances();
+        scene.add(line);
+      });
+
+      window.addEventListener('resize', () => {
+        const res = new THREE.Vector2(window.innerWidth, window.innerHeight);
+        scene.traverse(obj => {
+          if (obj.material && obj.material.isLineMaterial) {
+            obj.material.resolution.copy(res);
+          }
+        });
+      });
+    }` : '// Contours not active'}
+
+    // --- Render loop ---
+    function render() {
+      requestAnimationFrame(render);
+      controls.update();
+      for (const cb of frameCallbacks) cb();
+      renderer.render(scene, camera);
+    }
+
+    // --- Resize ---
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      renderer.setSize(w, h);
+      if (camera.isOrthographicCamera) {
+        const hh = (camera.top - camera.bottom) * 0.5;
+        const hw = hh * (w / h);
+        camera.left = -hw;
+        camera.right = hw;
+      } else {
+        camera.aspect = w / h;
+      }
+      camera.updateProjectionMatrix();
+    });
+
+    render();
+  <\/script>
+</body>
+</html>`;
       }
 
       setupControls() {
@@ -3495,6 +4435,7 @@ ${svg}
         document.getElementById('exportHeight').value = Math.round(window.innerHeight);
         document.getElementById('exportSvgBtn').addEventListener('click', () => this.exportContoursSvg());
         document.getElementById('exportEmbedBtn').addEventListener('click', () => this.exportEmbedPackage());
+        document.getElementById('exportInteractiveBtn').addEventListener('click', () => this.exportInteractiveHtml());
       }
 
       onResize() {
