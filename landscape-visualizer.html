@@ -669,7 +669,7 @@
       <div class="section-content">
         <div class="control-group">
           <div class="checkbox-group">
-            <input type="checkbox" id="surfaceEnabled">
+            <input type="checkbox" id="surfaceEnabled" checked>
             <label for="surfaceEnabled">Enable Surface</label>
           </div>
         </div>
@@ -677,10 +677,10 @@
         <div class="control-group">
           <label>Mode</label>
           <select id="surfaceMode">
-            <option value="plane" selected>Plane</option>
+            <option value="plane">Plane</option>
             <option value="wireframe">Wireframe</option>
             <option value="pointGrid">Point Grid</option>
-            <option value="background">Background</option>
+            <option value="background" selected>Background</option>
           </select>
         </div>
 
@@ -715,7 +715,7 @@
       <div class="section-content">
         <div class="control-group">
           <div class="checkbox-group">
-            <input type="checkbox" id="metallicShading" checked>
+            <input type="checkbox" id="metallicShading">
             <label for="metallicShading">Enable</label>
           </div>
         </div>
@@ -778,8 +778,8 @@
         </div>
 
         <div class="control-group hidden" id="rotateSpeed-group">
-          <label>Rotate Speed <span class="control-value" id="rotateSpeed-value">1.00</span></label>
-          <input type="range" id="rotateSpeed" min="0.1" max="5" step="0.1" value="1">
+          <label>Rotate Speed <span class="control-value" id="rotateSpeed-value">0.30</span></label>
+          <input type="range" id="rotateSpeed" min="0.1" max="5" step="0.1" value="0.3">
         </div>
 
         <div class="control-group">
@@ -939,12 +939,12 @@
         lineWidth: 1
       },
       surface: {
-        enabled: false,
-        mode: 'plane',  // 'plane' | 'wireframe' | 'pointGrid'
+        enabled: true,
+        mode: 'background',  // 'plane' | 'wireframe' | 'pointGrid' | 'background'
         pointSize: 1.0,
         gridScale: 1,
         reliefShading: false,
-        metallicShading: true,
+        metallicShading: false,
         metallic: {
           opacity: 0.15,
           baseBrightness: 1.0,
@@ -959,7 +959,7 @@
       camera: {
         mode: 'isometric',
         autoRotate: false,
-        rotateSpeed: 1.0,
+        rotateSpeed: 0.3,
         autoPan: false,
         panSpeed: 0.1,
         panDirection: { x: 1, z: 0 }
@@ -2490,8 +2490,10 @@
         this.controls.dampingFactor = 0.05;
         this.controls.target.set(0, 0, 0);
 
-        // Limit rotation in isometric mode
+        // Apply initial config
         this.setMode(config.mode);
+        this.controls.autoRotate = !!config.autoRotate;
+        this.controls.autoRotateSpeed = config.rotateSpeed || 1.0;
       }
 
       setMode(mode) {
@@ -2621,11 +2623,31 @@
         // Setup controls
         this.setupControls();
 
+        // Apply initial surface mode from CONFIG
+        this.applySurfaceMode(CONFIG.surface.mode);
+
         // Handle resize
         window.addEventListener('resize', () => this.onResize());
 
         // Start animation
         this.animate();
+      }
+
+      applySurfaceMode(mode) {
+        const isPointGrid = mode === 'pointGrid';
+        const isWireframe = mode === 'wireframe';
+        const isBackground = mode === 'background';
+
+        this.terrainMesh.setWireframe(isWireframe);
+        this.terrainMesh.setPointGrid(isPointGrid);
+        this.terrainMesh.setBackgroundMode(isBackground, CONFIG.scene.backgroundColor);
+
+        if ((mode === 'plane' || isBackground) && this.terrainMesh.mesh && this.terrainMesh.points) {
+          this.terrainMesh.mesh.visible = true;
+          this.terrainMesh.points.visible = false;
+        }
+
+        document.getElementById('pointGrid-controls').classList.toggle('hidden', !isPointGrid);
       }
 
       regenerateTerrain() {
@@ -3604,6 +3626,20 @@ ${svg}
     if (__params.has("tz")) STATE.camera.target[2] = parseFloat(__params.get("tz"));
     if (__params.has("autoRotate")) STATE.camera.autoRotate = __params.get("autoRotate") !== "false";
     if (__params.has("autoRotateSpeed")) STATE.camera.autoRotateSpeed = parseFloat(__params.get("autoRotateSpeed"));
+    if (__params.has("enableZoom")) STATE.camera.enableZoom = __params.get("enableZoom") !== "false";
+    if (__params.has("minPolarAngle")) STATE.camera.minPolarAngle = parseFloat(__params.get("minPolarAngle"));
+    if (__params.has("maxPolarAngle")) STATE.camera.maxPolarAngle = parseFloat(__params.get("maxPolarAngle"));
+    const __contourColor = __params.has("contourColor") ? __params.get("contourColor") : null;
+
+    // Resolve scene background: URL param > prefers-color-scheme > baked default
+    const __darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const __sceneBgOverridden = __params.has("bg") || __darkMode;
+    const __sceneBg = __params.has("bg") ? __params.get("bg") : (__darkMode ? '#171717' : "${CONFIG.scene.backgroundColor}");
+    document.body.style.backgroundColor = __sceneBg;
+    const __bgLum = (() => {
+      const c = new THREE.Color(__sceneBg);
+      return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    })();
 
     // --- Helpers ---
     function b64ToFloat32(b64) {
@@ -3647,9 +3683,11 @@ ${svg}
     controls.target.fromArray(cam.target);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI / 2 - 0.1;
+    controls.minPolarAngle = cam.minPolarAngle !== undefined ? cam.minPolarAngle : 0;
+    controls.maxPolarAngle = cam.maxPolarAngle !== undefined ? cam.maxPolarAngle : Math.PI / 2 - 0.1;
     controls.autoRotate = cam.autoRotate;
     controls.autoRotateSpeed = cam.autoRotateSpeed;
+    if (cam.enableZoom !== undefined) controls.enableZoom = cam.enableZoom;
     controls.update();
 
     // --- Decode heightmap from PNG (16-bit RG encoding) ---
@@ -3733,7 +3771,7 @@ ${svg}
     // --- Background depth surface ---
     ${needsBackground ? `{
       const bgMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color("${CONFIG.scene.backgroundColor}"),
+        color: new THREE.Color(__sceneBg),
         side: THREE.DoubleSide,
         depthWrite: true,
         depthTest: true
@@ -3748,7 +3786,7 @@ ${svg}
           lightDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
           u_cameraPos: { value: new THREE.Vector3() },
           baseColor: { value: new THREE.Color(0.92, 0.95, 1.0) },
-          baseBrightness: { value: ${s.metallicSurface.baseBrightness} },
+          baseBrightness: { value: __sceneBgOverridden ? __bgLum : ${s.metallicSurface.baseBrightness} },
           shadowLift: { value: ${s.metallicSurface.shadowLift} },
           shininess: { value: ${s.metallicSurface.shininess} },
           edgeSharpness: { value: ${s.metallicSurface.edgeSharpness} },
@@ -3799,8 +3837,11 @@ ${svg}
     ${needsContours ? `{
       const CC = STATE.contours;
       const side = T.segments + 1;
-      const useTerrain = CC.colorMode === 'terrain';
-      const solidColor = new THREE.Color(CC.color);
+      let useTerrain = CC.colorMode === 'terrain';
+      const solidColor = new THREE.Color(__contourColor || CC.color);
+      if (__contourColor) useTerrain = false;
+      // Auto-adapt solid contour color for dark backgrounds
+      if (!useTerrain && !__contourColor && __bgLum < 0.5) solidColor.set('#ffffff');
       const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
 
       // Build height grid for d3.contours — decode from the PNG pixels
@@ -3938,8 +3979,23 @@ ${svg}
       });
     }` : '// Contours not active'}
 
-    // --- Render loop ---
+    // --- Visibility-based render loop ---
+    let __tabVisible = !document.hidden;
+    let __elementVisible = true;
+
+    const __observer = new IntersectionObserver(([entry]) => {
+      __elementVisible = entry.isIntersecting;
+      if (__tabVisible && __elementVisible) render();
+    }, { threshold: 0 });
+    __observer.observe(renderer.domElement);
+
+    document.addEventListener("visibilitychange", () => {
+      __tabVisible = !document.hidden;
+      if (__tabVisible && __elementVisible) render();
+    });
+
     function render() {
+      if (!__tabVisible || !__elementVisible) return;
       requestAnimationFrame(render);
       controls.update();
       for (const cb of frameCallbacks) cb();
@@ -4432,24 +4488,7 @@ ${svg}
 
         document.getElementById('surfaceMode').addEventListener('change', (e) => {
           CONFIG.surface.mode = e.target.value;
-
-          // Apply the appropriate mode
-          const isPointGrid = e.target.value === 'pointGrid';
-          const isWireframe = e.target.value === 'wireframe';
-          const isBackground = e.target.value === 'background';
-
-          this.terrainMesh.setWireframe(isWireframe);
-          this.terrainMesh.setPointGrid(isPointGrid);
-          this.terrainMesh.setBackgroundMode(isBackground, CONFIG.scene.backgroundColor);
-
-          // When switching to plane or background mode, ensure mesh is visible
-          if ((e.target.value === 'plane' || isBackground) && this.terrainMesh.mesh && this.terrainMesh.points) {
-            this.terrainMesh.mesh.visible = true;
-            this.terrainMesh.points.visible = false;
-          }
-
-          // Show/hide point grid controls
-          document.getElementById('pointGrid-controls').classList.toggle('hidden', !isPointGrid);
+          this.applySurfaceMode(e.target.value);
         });
 
         document.getElementById('pointSize').addEventListener('input', (e) => {
